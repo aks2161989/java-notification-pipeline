@@ -15,5 +15,7 @@ public interface FellowRepository extends JpaRepository<Fellow, Integer> {
     @Query("SELECT f FROM Fellow f JOIN FETCH f.project WHERE f.fellowId = :id")
     Optional<Fellow> findByIdWithProject(@Param("id") Integer id);
 
+    Optional<Fellow> findByEmail(String email);
+
     List<Fellow> findByStatus(String status);
 }

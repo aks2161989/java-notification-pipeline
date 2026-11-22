@@ -7,8 +7,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -143,7 +148,40 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
 
     @Override
     public Optional<YouTubeVideoMetadata> getVideoStatus(String videoId) {
-        return Optional.ofNullable(videos.get(videoId));
+        YouTubeVideoMetadata meta = videos.get(videoId);
+        if (meta != null) {
+            return Optional.of(meta);
+        }
+        // Fallback: check YouTube oEmbed for real videos tested locally
+        if (checkYouTubeOEmbed(videoId)) {
+            YouTubeVideoMetadata discovered = new YouTubeVideoMetadata(
+                    videoId, "YouTube Video " + videoId, "public", "processed",
+                    OffsetDateTime.now(), null, null
+            );
+            videos.put(videoId, discovered);
+            return Optional.of(discovered);
+        }
+        return Optional.empty();
+    }
+
+    private boolean checkYouTubeOEmbed(String videoId) {
+        if (videoId == null || videoId.isBlank()) return false;
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(3))
+                    .build();
+            String url = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=" + videoId + "&format=json";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(3))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            return resp.statusCode() == 200;
+        } catch (Exception e) {
+            log.debug("oEmbed check for video {} returned: {}", videoId, e.getMessage());
+            return false;
+        }
     }
 
     @Override

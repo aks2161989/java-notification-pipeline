@@ -9,6 +9,11 @@ import com.google.api.services.youtube.model.VideoListResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -35,7 +40,14 @@ public class LiveYouTubeAdapter implements YouTubeAdapter {
     @Override
     public Optional<YouTubeVideoMetadata> getVideoStatus(String videoId) {
         if (youTubeClient == null || apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("YOUTUBE_API_KEY not configured. Set USE_MOCK_APIS=true or provide a valid key.");
+            // Fallback to public oEmbed check
+            if (checkYouTubeOEmbed(videoId)) {
+                return Optional.of(new YouTubeVideoMetadata(
+                        videoId, "Public Video " + videoId, "public", "processed",
+                        OffsetDateTime.now(), null, null
+                ));
+            }
+            return Optional.empty();
         }
         try {
             YouTube.Videos.List request = youTubeClient.videos().list(List.of("status", "snippet"));
@@ -71,5 +83,25 @@ public class LiveYouTubeAdapter implements YouTubeAdapter {
     @Override
     public boolean isVideoPublic(String videoId) {
         return getVideoStatus(videoId).map(YouTubeVideoMetadata::isPublic).orElse(false);
+    }
+
+    private boolean checkYouTubeOEmbed(String videoId) {
+        if (videoId == null || videoId.isBlank()) return false;
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(3))
+                    .build();
+            String url = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=" + videoId + "&format=json";
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(3))
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            return resp.statusCode() == 200;
+        } catch (Exception e) {
+            log.debug("oEmbed check for video {} returned: {}", videoId, e.getMessage());
+            return false;
+        }
     }
 }

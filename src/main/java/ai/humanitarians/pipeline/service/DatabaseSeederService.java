@@ -146,69 +146,141 @@ public class DatabaseSeederService {
             // 1. Projects Sheet
             Sheet projectsSheet = workbook.getSheet("projects");
             if (projectsSheet != null) {
+                Map<String, Integer> pCols = buildHeaderMap(projectsSheet);
                 for (Row row : projectsSheet) {
                     if (row.getRowNum() == 0) continue;
-                    Cell idCell = row.getCell(0);
+                    int idCol = pCols.getOrDefault("project_id", 0);
+                    Cell idCell = row.getCell(idCol);
                     if (idCell == null || idCell.getCellType() == CellType.BLANK) continue;
                     int pid = (int) idCell.getNumericCellValue();
-                    String name = getCellString(row.getCell(1), "Project " + pid);
-                    String type = getCellString(row.getCell(2), "internal");
-                    if (!projectRepository.existsById(pid)) {
-                        projectRepository.save(new Project(pid, name, type));
-                        counts.put("projects", counts.get("projects") + 1);
-                    }
+                    String name = getCellString(row.getCell(pCols.getOrDefault("project_name", 1)), "Project " + pid);
+                    String type = getCellString(row.getCell(pCols.getOrDefault("project_type", 2)), "internal");
+                    
+                    Project p = projectRepository.findById(pid).orElseGet(() -> new Project(pid, name, type));
+                    p.setProjectName(name);
+                    p.setProjectType(type);
+                    projectRepository.save(p);
+                    counts.put("projects", counts.get("projects") + 1);
                 }
             }
 
-            // 2. Fellows Sheet
+            // 2. PMs Sheet
+            Sheet pmsSheet = workbook.getSheet("pms");
+            if (pmsSheet != null) {
+                Map<String, Integer> pmCols = buildHeaderMap(pmsSheet);
+                for (Row row : pmsSheet) {
+                    if (row.getRowNum() == 0) continue;
+                    int idCol = pmCols.getOrDefault("pm_id", 0);
+                    Cell idCell = row.getCell(idCol);
+                    if (idCell == null || idCell.getCellType() == CellType.BLANK) continue;
+                    int pmid = (int) idCell.getNumericCellValue();
+                    int pid = getCellInt(row.getCell(pmCols.getOrDefault("project_id", 1)), 1);
+                    String name = DataNormalizer.cleanText(getCellString(row.getCell(pmCols.getOrDefault("full_name", 2)), "PM " + pmid));
+                    String email = DataNormalizer.normalizeEmail(getCellString(row.getCell(pmCols.getOrDefault("email", 3)), ""));
+                    String role = DataNormalizer.cleanText(getCellString(row.getCell(pmCols.getOrDefault("role", 4)), "pm"));
+                    String status = DataNormalizer.normalizeStatus(getCellString(row.getCell(pmCols.getOrDefault("status", 5)), "active"), "active");
+
+                    Project p = projectRepository.findById(pid).orElseGet(() ->
+                            projectRepository.save(new Project(pid, "Project " + pid, "internal")));
+                    PM pm = pmRepository.findById(pmid).orElseGet(() -> new PM(pmid, p, name, email, role, status));
+                    pm.setProject(p);
+                    pm.setFullName(name);
+                    pm.setEmail(email);
+                    pm.setRole(role);
+                    pm.setStatus(status);
+                    pmRepository.save(pm);
+                    counts.put("pms", counts.get("pms") + 1);
+                }
+            }
+
+            // 3. Fellows Sheet
             Sheet fellowsSheet = workbook.getSheet("fellows");
             if (fellowsSheet != null) {
+                Map<String, Integer> fCols = buildHeaderMap(fellowsSheet);
                 for (Row row : fellowsSheet) {
                     if (row.getRowNum() == 0) continue;
-                    Cell idCell = row.getCell(0);
+                    int idCol = fCols.getOrDefault("fellow_id", 0);
+                    Cell idCell = row.getCell(idCol);
                     if (idCell == null || idCell.getCellType() == CellType.BLANK) continue;
                     int fid = (int) idCell.getNumericCellValue();
-                    int pid = (int) (row.getCell(1) != null ? row.getCell(1).getNumericCellValue() : 1);
-                    String name = DataNormalizer.cleanText(getCellString(row.getCell(2), "Fellow " + fid));
-                    String email = DataNormalizer.normalizeEmail(getCellString(row.getCell(3), ""));
-                    String status = DataNormalizer.normalizeStatus(getCellString(row.getCell(4), "active"), "active");
-                    String label = DataNormalizer.cleanText(getCellString(row.getCell(5), null));
+                    int pid = getCellInt(row.getCell(fCols.getOrDefault("project_id", 1)), 1);
+                    String name = DataNormalizer.cleanText(getCellString(row.getCell(fCols.getOrDefault("full_name", 2)), "Fellow " + fid));
+                    String email = DataNormalizer.normalizeEmail(getCellString(row.getCell(fCols.getOrDefault("email", 3)), ""));
+                    String status = DataNormalizer.normalizeStatus(getCellString(row.getCell(fCols.getOrDefault("status", 4)), "active"), "active");
+                    String label = DataNormalizer.cleanText(getCellString(row.getCell(fCols.getOrDefault("display_label", 5)), null));
 
-                    if (!fellowRepository.existsById(fid)) {
-                        Project p = projectRepository.findById(pid).orElseGet(() ->
-                                projectRepository.save(new Project(pid, "Project " + pid, "internal")));
-                        fellowRepository.save(new Fellow(fid, p, name, email, status, label));
-                        counts.put("fellows", counts.get("fellows") + 1);
-                    }
+                    Project p = projectRepository.findById(pid).orElseGet(() ->
+                            projectRepository.save(new Project(pid, "Project " + pid, "internal")));
+                    Fellow f = fellowRepository.findById(fid).orElseGet(() -> new Fellow(fid, p, name, email, status, label));
+                    f.setProject(p);
+                    f.setFullName(name);
+                    f.setEmail(email);
+                    f.setStatus(status);
+                    f.setDisplayLabel(label);
+                    fellowRepository.save(f);
+                    counts.put("fellows", counts.get("fellows") + 1);
                 }
             }
 
-            // 3. Videos Sheet
+            // 4. Videos Sheet
             Sheet videosSheet = workbook.getSheet("videos");
             if (videosSheet != null) {
+                Map<String, Integer> vCols = buildHeaderMap(videosSheet);
                 for (Row row : videosSheet) {
                     if (row.getRowNum() == 0) continue;
-                    Cell idCell = row.getCell(0);
+                    int idCol = vCols.getOrDefault("video_id", 0);
+                    Cell idCell = row.getCell(idCol);
                     if (idCell == null || idCell.getCellType() == CellType.BLANK) continue;
                     int vid = (int) idCell.getNumericCellValue();
-                    Integer fid = row.getCell(1) != null && row.getCell(1).getCellType() == CellType.NUMERIC
-                            ? (int) row.getCell(1).getNumericCellValue() : null;
-                    String title = DataNormalizer.cleanText(getCellString(row.getCell(2), "Video " + vid));
-                    String ytLink = getCellString(row.getCell(3), null);
-                    String driveLink = getCellString(row.getCell(4), null);
-                    String statusStr = DataNormalizer.normalizeStatus(getCellString(row.getCell(5), "submitted"), "submitted");
 
-                    if (!videoRepository.existsById(vid)) {
-                        Fellow f = (fid != null) ? fellowRepository.findById(fid).orElse(null) : null;
-                        VideoRecord vr = new VideoRecord(vid, f, title, DataNormalizer.extractYoutubeId(ytLink),
-                                VideoStatus.fromValue(statusStr));
-                        vr.setYoutubeLink(ytLink);
-                        vr.setDriveLink(driveLink);
-                        vr.setDriveFileId(DataNormalizer.extractDriveFileId(driveLink));
-                        vr.setSubmittedOn(OffsetDateTime.now());
-                        videoRepository.save(vr);
-                        counts.put("videos", counts.get("videos") + 1);
+                    // Resolve fellow_id: check fellow_id column, fallback to fellow label or col 1
+                    Integer fid = null;
+                    if (vCols.containsKey("fellow_id")) {
+                        fid = getCellInt(row.getCell(vCols.get("fellow_id")), null);
+                    } else if (vCols.containsKey("fellow")) {
+                        String fLabel = getCellString(row.getCell(vCols.get("fellow")), null);
+                        if (fLabel != null) {
+                            fid = fellowRepository.findByEmail(fLabel)
+                                    .or(() -> fellowRepository.findAll().stream()
+                                            .filter(fel -> fel.getDisplayLabel() != null && fel.getDisplayLabel().equalsIgnoreCase(fLabel))
+                                            .findFirst())
+                                    .map(Fellow::getFellowId).orElse(null);
+                        }
                     }
+                    if (fid == null && row.getCell(1) != null && row.getCell(1).getCellType() == CellType.NUMERIC) {
+                        fid = (int) row.getCell(1).getNumericCellValue();
+                    }
+
+                    int titleCol = vCols.getOrDefault("title", 2);
+                    String title = DataNormalizer.cleanText(getCellString(row.getCell(titleCol), "Video " + vid));
+
+                    int ytCol = vCols.containsKey("youtube_link") ? vCols.get("youtube_link") : vCols.getOrDefault("youtube_video_id", 3);
+                    String ytLink = getCellString(row.getCell(ytCol), null);
+
+                    int driveCol = vCols.containsKey("drive_link") ? vCols.get("drive_link") : vCols.getOrDefault("drive_file_id", 4);
+                    String driveLink = getCellString(row.getCell(driveCol), null);
+
+                    int statusCol = vCols.containsKey("current_status") ? vCols.get("current_status") : vCols.getOrDefault("status", 6);
+                    String statusStr = DataNormalizer.normalizeStatus(getCellString(row.getCell(statusCol), "submitted"), "submitted");
+
+                    Fellow f = (fid != null) ? fellowRepository.findById(fid).orElse(null) : null;
+                    String ytId = DataNormalizer.extractYoutubeId(ytLink);
+                    String driveId = DataNormalizer.extractDriveFileId(driveLink);
+
+                    VideoRecord vr = videoRepository.findById(vid).orElseGet(() ->
+                            new VideoRecord(vid, f, title, ytId, VideoStatus.fromValue(statusStr)));
+                    vr.setFellow(f);
+                    vr.setTitle(title);
+                    vr.setYoutubeLink(ytLink);
+                    vr.setYoutubeVideoId(ytId);
+                    vr.setDriveLink(driveLink);
+                    vr.setDriveFileId(driveId);
+                    vr.setCurrentStatus(VideoStatus.fromValue(statusStr));
+                    if (vr.getSubmittedOn() == null) {
+                        vr.setSubmittedOn(OffsetDateTime.now());
+                    }
+                    videoRepository.save(vr);
+                    counts.put("videos", counts.get("videos") + 1);
                 }
             }
 
@@ -217,6 +289,35 @@ public class DatabaseSeederService {
         }
 
         return counts;
+    }
+
+    private Map<String, Integer> buildHeaderMap(Sheet sheet) {
+        Map<String, Integer> map = new HashMap<>();
+        if (sheet == null) return map;
+        Row header = sheet.getRow(0);
+        if (header == null) return map;
+        for (Cell cell : header) {
+            String val = getCellString(cell, "").trim().toLowerCase();
+            if (!val.isEmpty()) {
+                map.put(val, cell.getColumnIndex());
+            }
+        }
+        return map;
+    }
+
+    private Integer getCellInt(Cell cell, Integer fallback) {
+        if (cell == null) return fallback;
+        if (cell.getCellType() == CellType.NUMERIC) {
+            return (int) cell.getNumericCellValue();
+        }
+        if (cell.getCellType() == CellType.STRING) {
+            try {
+                return Integer.parseInt(cell.getStringCellValue().trim());
+            } catch (NumberFormatException e) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 
     private String getCellString(Cell cell, String fallback) {
