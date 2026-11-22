@@ -2,6 +2,7 @@ package ai.humanitarians.pipeline.scheduler;
 
 import ai.humanitarians.pipeline.config.PipelineProperties;
 import ai.humanitarians.pipeline.model.dto.ReconciliationReport;
+import ai.humanitarians.pipeline.service.DatabaseSeederService;
 import ai.humanitarians.pipeline.service.ReconciliationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,16 +19,23 @@ public class PipelineCronScheduler {
     private static final Logger log = LoggerFactory.getLogger(PipelineCronScheduler.class);
 
     private final ReconciliationService reconciliationService;
+    private final DatabaseSeederService seederService;
     private final PipelineProperties properties;
 
     private OffsetDateTime lastRunTime;
     private OffsetDateTime lastCompletionTime;
+    private OffsetDateTime lastSheetSyncTime;
     private ReconciliationReport lastReport;
     private long executionCount = 0;
     private String lastError;
 
-    public PipelineCronScheduler(ReconciliationService reconciliationService, PipelineProperties properties) {
+    public PipelineCronScheduler(
+            ReconciliationService reconciliationService,
+            DatabaseSeederService seederService,
+            PipelineProperties properties
+    ) {
         this.reconciliationService = reconciliationService;
+        this.seederService = seederService;
         this.properties = properties;
     }
 
@@ -47,6 +55,18 @@ public class PipelineCronScheduler {
         log.info("Starting {} reconciliation run #{}...", triggerType, ++executionCount);
         this.lastRunTime = OffsetDateTime.now();
         this.lastError = null;
+
+        // Auto-pull latest updates from cloud Google Sheet before reconciling
+        if (properties.getCron().isAutoSyncSheet()) {
+            try {
+                log.info("Auto-syncing cloud Google Sheet workbook for {} run #{}...", triggerType, executionCount);
+                seederService.syncFromGoogleSheetWorkbook();
+                this.lastSheetSyncTime = OffsetDateTime.now();
+            } catch (Exception e) {
+                log.warn("Cloud Google Sheet auto-sync encountered an issue: {}. Continuing with existing database records.", e.getMessage());
+            }
+        }
+
         try {
             ReconciliationReport report = reconciliationService.runReconciliation();
             this.lastReport = report;
@@ -67,9 +87,11 @@ public class PipelineCronScheduler {
     public Map<String, Object> getStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("enabled", properties.getCron().isEnabled());
+        status.put("autoSyncSheet", properties.getCron().isAutoSyncSheet());
         status.put("schedule", properties.getCron().getSchedule());
         status.put("executionCount", executionCount);
         status.put("lastRunTime", lastRunTime);
+        status.put("lastSheetSyncTime", lastSheetSyncTime);
         status.put("lastCompletionTime", lastCompletionTime);
         status.put("lastError", lastError);
         status.put("lastReport", lastReport);
@@ -78,6 +100,7 @@ public class PipelineCronScheduler {
 
     public OffsetDateTime getLastRunTime() { return lastRunTime; }
     public OffsetDateTime getLastCompletionTime() { return lastCompletionTime; }
+    public OffsetDateTime getLastSheetSyncTime() { return lastSheetSyncTime; }
     public ReconciliationReport getLastReport() { return lastReport; }
     public long getExecutionCount() { return executionCount; }
     public String getLastError() { return lastError; }

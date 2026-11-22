@@ -81,10 +81,13 @@ public class PipelineProperties {
     public static class Cron {
         private String schedule = "0 */15 * * * *";
         private boolean enabled = false;
+        private boolean autoSyncSheet = true;
 
         public String getSchedule() { return schedule; }
         public void setSchedule(String schedule) { this.schedule = schedule; }
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public boolean isAutoSyncSheet() { return autoSyncSheet; }
+        public void setAutoSyncSheet(boolean autoSyncSheet) { this.autoSyncSheet = autoSyncSheet; }
     }
 }

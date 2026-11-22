@@ -65,3 +65,4 @@ pipeline:
   cron:
     schedule: ${PIPELINE_CRON:*/30 * * * * *} # Every 30 seconds by default
     enabled: ${PIPELINE_CRON_ENABLED:true}
+    auto-sync-sheet: ${AUTO_SYNC_SHEET:true}
