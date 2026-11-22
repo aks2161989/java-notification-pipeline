@@ -23,6 +23,7 @@ public class PipelineManagementController {
     private final ai.humanitarians.pipeline.repository.FellowRepository fellowRepository;
     private final ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository;
     private final ai.humanitarians.pipeline.config.PipelineProperties properties;
+    private final ai.humanitarians.pipeline.scheduler.PipelineCronScheduler scheduler;
 
     public PipelineManagementController(
             ReconciliationService reconciliationService,
@@ -32,7 +33,8 @@ public class PipelineManagementController {
             YouTubeAdapter youTubeAdapter,
             ai.humanitarians.pipeline.repository.FellowRepository fellowRepository,
             ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository,
-            ai.humanitarians.pipeline.config.PipelineProperties properties
+            ai.humanitarians.pipeline.config.PipelineProperties properties,
+            ai.humanitarians.pipeline.scheduler.PipelineCronScheduler scheduler
     ) {
         this.reconciliationService = reconciliationService;
         this.healthService = healthService;
@@ -42,6 +44,7 @@ public class PipelineManagementController {
         this.fellowRepository = fellowRepository;
         this.videoRepository = videoRepository;
         this.properties = properties;
+        this.scheduler = scheduler;
     }
 
     @RequestMapping(value = "/reconcile", method = {RequestMethod.GET, RequestMethod.POST})
@@ -63,6 +66,11 @@ public class PipelineManagementController {
     @GetMapping("/health")
     public ResponseEntity<HealthReport> getHealth() {
         return ResponseEntity.ok(healthService.checkHealth());
+    }
+
+    @GetMapping("/scheduler")
+    public ResponseEntity<Map<String, Object>> getSchedulerStatus() {
+        return ResponseEntity.ok(scheduler.getStatus());
     }
 
     @RequestMapping(value = "/retry", method = {RequestMethod.GET, RequestMethod.POST})

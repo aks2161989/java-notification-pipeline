@@ -26,6 +26,7 @@ public class PipelineProperties {
     private int lockTimeoutSeconds = 600;
     private int maxRetryAttempts = 3;
     private boolean autoSeedOnStartup = true;
+    private Cron cron = new Cron();
 
     public PipelineMode getMode() { return mode; }
     public void setMode(PipelineMode mode) { this.mode = mode; }
@@ -73,4 +74,17 @@ public class PipelineProperties {
 
     public boolean isAutoSeedOnStartup() { return autoSeedOnStartup; }
     public void setAutoSeedOnStartup(boolean autoSeedOnStartup) { this.autoSeedOnStartup = autoSeedOnStartup; }
+
+    public Cron getCron() { return cron; }
+    public void setCron(Cron cron) { this.cron = cron; }
+
+    public static class Cron {
+        private String schedule = "0 */15 * * * *";
+        private boolean enabled = false;
+
+        public String getSchedule() { return schedule; }
+        public void setSchedule(String schedule) { this.schedule = schedule; }
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    }
 }
