@@ -409,7 +409,15 @@ public class DatabaseSeederService {
             vr.setDriveLink(driveLink);
             vr.setDriveFileId(driveId);
             VideoStatus newStatus = VideoStatus.fromValue(statusStr);
-            vr.setCurrentStatus(newStatus);
+            if (vr.getCurrentStatus() == VideoStatus.PUBLISHED && newStatus == VideoStatus.QUEUED
+                    && notificationRepository.findActiveOrSent(vid).isPresent()) {
+                // Video was already reconciled and published by pipeline; preserve published state and audit logs
+            } else {
+                vr.setCurrentStatus(newStatus);
+                if (newStatus == VideoStatus.QUEUED) {
+                    notificationRepository.deleteByVideoId(vid);
+                }
+            }
             if (statusNote != null) {
                 vr.setStatusNote(statusNote);
             }
@@ -420,9 +428,6 @@ public class DatabaseSeederService {
             }
             if (publishedOn != null) {
                 vr.setPublishedOn(publishedOn);
-            }
-            if (newStatus == VideoStatus.QUEUED) {
-                notificationRepository.deleteByVideoId(vid);
             }
             videoRepository.save(vr);
             count++;

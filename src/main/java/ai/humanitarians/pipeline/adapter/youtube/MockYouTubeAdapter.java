@@ -58,10 +58,6 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
                 "5E_vEF99999", "Caching Explained in 5 Minutes", "private", "processed",
                 null, null, null
         ));
-        registerVideo(new YouTubeVideoMetadata(
-                "cGOYmLtt5kk", "My Test Pipeline Video", "unlisted", "processed",
-                null, null, "Queue"
-        ));
     }
 
     private void loadSavedState() {
@@ -154,20 +150,22 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
         if (meta != null) {
             return Optional.of(meta);
         }
-        // Fallback: check YouTube oEmbed for real videos tested locally
-        if (checkYouTubeOEmbed(videoId)) {
+        // Fallback: check YouTube oEmbed for real videos tested locally without an API key
+        Optional<String> realTitle = checkYouTubeOEmbedTitle(videoId);
+        if (realTitle.isPresent()) {
             YouTubeVideoMetadata discovered = new YouTubeVideoMetadata(
-                    videoId, "YouTube Video " + videoId, "public", "processed",
+                    videoId, realTitle.get(), "public", "processed",
                     OffsetDateTime.now(), null, null
             );
             videos.put(videoId, discovered);
+            persist();
             return Optional.of(discovered);
         }
         return Optional.empty();
     }
 
-    private boolean checkYouTubeOEmbed(String videoId) {
-        if (videoId == null || videoId.isBlank()) return false;
+    private Optional<String> checkYouTubeOEmbedTitle(String videoId) {
+        if (videoId == null || videoId.isBlank()) return Optional.empty();
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(3))
@@ -179,11 +177,22 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
                     .GET()
                     .build();
             HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
-            return resp.statusCode() == 200;
+            if (resp.statusCode() == 200) {
+                com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(resp.body());
+                if (root.has("title")) {
+                    return Optional.of(root.get("title").asText());
+                }
+                return Optional.of("YouTube Video " + videoId);
+            }
+            return Optional.empty();
         } catch (Exception e) {
             log.debug("oEmbed check for video {} returned: {}", videoId, e.getMessage());
-            return false;
+            return Optional.empty();
         }
+    }
+
+    private boolean checkYouTubeOEmbed(String videoId) {
+        return checkYouTubeOEmbedTitle(videoId).isPresent();
     }
 
     @Override

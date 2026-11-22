@@ -57,13 +57,13 @@ public class SimulationFlowTest {
         Project project = projectRepository.save(new Project(1, "Madison", "internal"));
         Fellow fellow = fellowRepository.save(new Fellow(1, project, "Jainil Shah", "jainil@test.org", "active", "Jainil Shah (Madison)"));
 
-        VideoRecord v99 = new VideoRecord(99, fellow, "My Test Pipeline Video", "cGOYmLtt5kk", VideoStatus.QUEUED);
-        v99.setYoutubeLink("https://youtu.be/cGOYmLtt5kk");
+        VideoRecord v99 = new VideoRecord(99, fellow, "Simulation Test Video", "mock_sim_vid_99", VideoStatus.QUEUED);
+        v99.setYoutubeLink("https://youtu.be/mock_sim_vid_99");
         videoRepository.save(v99);
 
         assertTrue(youTubeAdapter instanceof MockYouTubeAdapter);
         MockYouTubeAdapter mockYT = (MockYouTubeAdapter) youTubeAdapter;
-        mockYT.simulateUnpublish("cGOYmLtt5kk");
+        mockYT.simulateUnpublish("mock_sim_vid_99");
 
         // 2. Initial run: video is not yet public -> skipped
         ReconciliationReport report1 = reconciliationService.runReconciliation(PipelineMode.DRY_RUN, null, true);
@@ -72,9 +72,9 @@ public class SimulationFlowTest {
         assertEquals(0, report1.getNotificationsSent());
 
         // 3. Reviewer marks video public via simulation endpoint
-        boolean published = mockYT.simulatePublish("cGOYmLtt5kk");
+        boolean published = mockYT.simulatePublish("mock_sim_vid_99");
         assertTrue(published);
-        assertTrue(mockYT.isVideoPublic("cGOYmLtt5kk"));
+        assertTrue(mockYT.isVideoPublic("mock_sim_vid_99"));
 
         // 4. Reconciliation runs in REDIRECTED mode: detects publication, pre-commits and dispatches
         ReconciliationReport report2 = reconciliationService.runReconciliation(PipelineMode.REDIRECTED, "test@test.org", true);
@@ -103,7 +103,7 @@ public class SimulationFlowTest {
 
         // 6. Reset for repeatable testing
         notificationRepository.deleteByVideoId(99);
-        mockYT.simulateUnpublish("cGOYmLtt5kk");
+        mockYT.simulateUnpublish("mock_sim_vid_99");
         VideoRecord resetVideo = videoRepository.findById(99).orElseThrow();
         assertEquals(VideoStatus.QUEUED, resetVideo.getCurrentStatus());
         assertTrue(notificationRepository.findByVideo_VideoIdOrderByNotificationIdDesc(99).isEmpty());
