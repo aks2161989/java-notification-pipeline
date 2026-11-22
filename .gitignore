@@ -50,3 +50,12 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+*.iml
+.project
+.classpath
+.settings/
+.factorypath
+
+# Maven / Java
+target/
+*.class

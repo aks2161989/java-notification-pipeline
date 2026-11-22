@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: notification-pipeline
+  
+  datasource:
+    # Default to H2 in-memory or PostgreSQL based on environment
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:pipelinedb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.h2.Driver}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:none}
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# Custom Pipeline Configuration
+pipeline:
+  mode: ${PIPELINE_MODE:DRY_RUN} # Choices: DRY_RUN, REDIRECTED, COHORT, PROD
+  redirect-test-email: ${REDIRECT_TEST_EMAIL:akshaychavan20031@gmail.com}
+  cohort-fellow-ids: ${COHORT_FELLOW_IDS:1}
+  use-mock-apis: ${USE_MOCK_APIS:true}
+  youtube-api-key: ${YOUTUBE_API_KEY:}
+  outbox-dir: ${OUTBOX_DIR:outbox}
+  tracker-xlsx-path: ${TRACKER_XLSX_PATH:data/YouTube_Pipeline_Tracker.xlsx}
+  lock-file-path: ${LOCK_FILE_PATH:.pipeline.lock}
+  lock-timeout-seconds: ${LOCK_TIMEOUT_SECONDS:600}
+  max-retry-attempts: ${MAX_RETRY_ATTEMPTS:3}
+  cron:
+    schedule: ${PIPELINE_CRON:0 */15 * * * *} # Every 15 minutes by default
+    enabled: ${PIPELINE_CRON_ENABLED:false}
