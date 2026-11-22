@@ -249,7 +249,8 @@ public class DatabaseSeederService {
                         if (fLabel != null) {
                             fid = fellowRepository.findByEmail(fLabel)
                                     .or(() -> fellowRepository.findAll().stream()
-                                            .filter(fel -> fel.getDisplayLabel() != null && fel.getDisplayLabel().equalsIgnoreCase(fLabel))
+                                            .filter(fel -> (fel.getDisplayLabel() != null && fel.getDisplayLabel().equalsIgnoreCase(fLabel))
+                                                    || (fel.getFullName() != null && fel.getFullName().equalsIgnoreCase(fLabel)))
                                             .findFirst())
                                     .map(Fellow::getFellowId).orElse(null);
                         }

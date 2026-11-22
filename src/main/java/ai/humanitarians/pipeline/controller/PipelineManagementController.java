@@ -20,19 +20,22 @@ public class PipelineManagementController {
     private final NotificationRetryService retryService;
     private final DatabaseSeederService seederService;
     private final YouTubeAdapter youTubeAdapter;
+    private final ai.humanitarians.pipeline.repository.FellowRepository fellowRepository;
 
     public PipelineManagementController(
             ReconciliationService reconciliationService,
             PipelineHealthService healthService,
             NotificationRetryService retryService,
             DatabaseSeederService seederService,
-            YouTubeAdapter youTubeAdapter
+            YouTubeAdapter youTubeAdapter,
+            ai.humanitarians.pipeline.repository.FellowRepository fellowRepository
     ) {
         this.reconciliationService = reconciliationService;
         this.healthService = healthService;
         this.retryService = retryService;
         this.seederService = seederService;
         this.youTubeAdapter = youTubeAdapter;
+        this.fellowRepository = fellowRepository;
     }
 
     @PostMapping("/reconcile")
@@ -83,6 +86,20 @@ public class PipelineManagementController {
                 ? seederService.syncFellowsFromGoogleSheet(sheetUrl)
                 : seederService.syncFellowsFromGoogleSheet();
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/fellows")
+    public ResponseEntity<java.util.List<ai.humanitarians.pipeline.model.entity.Fellow>> getFellows(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "20") int limit
+    ) {
+        java.util.List<ai.humanitarians.pipeline.model.entity.Fellow> list = (status != null && !status.isBlank())
+                ? fellowRepository.findByStatus(status)
+                : fellowRepository.findAll();
+        if (limit > 0 && list.size() > limit) {
+            list = list.subList(0, limit);
+        }
+        return ResponseEntity.ok(list);
     }
 
     @PostMapping("/simulation/publish/{videoId}")
