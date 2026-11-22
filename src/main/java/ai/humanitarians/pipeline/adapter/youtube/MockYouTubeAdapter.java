@@ -58,6 +58,10 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
                 "5E_vEF99999", "Caching Explained in 5 Minutes", "private", "processed",
                 null, null, null
         ));
+        registerVideo(new YouTubeVideoMetadata(
+                "cGOYmLtt5kk", "My Test Pipeline Video", "unlisted", "processed",
+                null, null, "Queue"
+        ));
     }
 
     private void loadSavedState() {
@@ -112,38 +116,36 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
 
     public boolean simulatePublish(String videoId) {
         YouTubeVideoMetadata existing = videos.get(videoId);
-        if (existing != null) {
-            videos.put(videoId, new YouTubeVideoMetadata(
-                    existing.videoId(),
-                    existing.title(),
-                    "public",
-                    existing.uploadStatus(),
-                    OffsetDateTime.now(),
-                    existing.channelId(),
-                    existing.playlistName()
-            ));
-            persist();
-            return true;
-        }
-        return false;
+        String title = existing != null ? existing.title() : "Video " + videoId;
+        String channelId = existing != null ? existing.channelId() : null;
+        videos.put(videoId, new YouTubeVideoMetadata(
+                videoId,
+                title,
+                "public",
+                "processed",
+                OffsetDateTime.now(),
+                channelId,
+                null
+        ));
+        persist();
+        return true;
     }
 
     public boolean simulateUnpublish(String videoId) {
         YouTubeVideoMetadata existing = videos.get(videoId);
-        if (existing != null) {
-            videos.put(videoId, new YouTubeVideoMetadata(
-                    existing.videoId(),
-                    existing.title(),
-                    "unlisted",
-                    existing.uploadStatus(),
-                    null,
-                    existing.channelId(),
-                    existing.playlistName()
-            ));
-            persist();
-            return true;
-        }
-        return false;
+        String title = existing != null ? existing.title() : "Video " + videoId;
+        String channelId = existing != null ? existing.channelId() : null;
+        videos.put(videoId, new YouTubeVideoMetadata(
+                videoId,
+                title,
+                "unlisted",
+                "processed",
+                null,
+                channelId,
+                "Queue"
+        ));
+        persist();
+        return true;
     }
 
     @Override

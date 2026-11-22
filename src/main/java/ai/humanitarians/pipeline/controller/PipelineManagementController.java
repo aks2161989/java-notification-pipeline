@@ -22,6 +22,7 @@ public class PipelineManagementController {
     private final YouTubeAdapter youTubeAdapter;
     private final ai.humanitarians.pipeline.repository.FellowRepository fellowRepository;
     private final ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository;
+    private final ai.humanitarians.pipeline.repository.NotificationLogRepository notificationRepository;
     private final ai.humanitarians.pipeline.config.PipelineProperties properties;
     private final ai.humanitarians.pipeline.scheduler.PipelineCronScheduler scheduler;
 
@@ -33,6 +34,7 @@ public class PipelineManagementController {
             YouTubeAdapter youTubeAdapter,
             ai.humanitarians.pipeline.repository.FellowRepository fellowRepository,
             ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository,
+            ai.humanitarians.pipeline.repository.NotificationLogRepository notificationRepository,
             ai.humanitarians.pipeline.config.PipelineProperties properties,
             ai.humanitarians.pipeline.scheduler.PipelineCronScheduler scheduler
     ) {
@@ -43,6 +45,7 @@ public class PipelineManagementController {
         this.youTubeAdapter = youTubeAdapter;
         this.fellowRepository = fellowRepository;
         this.videoRepository = videoRepository;
+        this.notificationRepository = notificationRepository;
         this.properties = properties;
         this.scheduler = scheduler;
     }
@@ -163,8 +166,17 @@ public class PipelineManagementController {
     @RequestMapping(value = "/simulation/publish/{videoId}", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Object>> simulatePublish(@PathVariable String videoId) {
         if (youTubeAdapter instanceof MockYouTubeAdapter mock) {
-            boolean success = mock.simulatePublish(videoId);
-            return ResponseEntity.ok(Map.of("videoId", videoId, "published", success));
+            String targetYtId = videoId;
+            try {
+                int dbVid = Integer.parseInt(videoId);
+                java.util.Optional<ai.humanitarians.pipeline.model.entity.VideoRecord> vr = videoRepository.findById(dbVid);
+                if (vr.isPresent() && vr.get().getYoutubeVideoId() != null) {
+                    targetYtId = vr.get().getYoutubeVideoId();
+                }
+            } catch (NumberFormatException ignored) {}
+
+            boolean success = mock.simulatePublish(targetYtId);
+            return ResponseEntity.ok(Map.of("videoId", videoId, "youtubeVideoId", targetYtId, "published", success));
         }
         return ResponseEntity.badRequest().body(Map.of("error", "Mock adapter not active"));
     }
@@ -172,9 +184,45 @@ public class PipelineManagementController {
     @RequestMapping(value = "/simulation/unpublish/{videoId}", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Object>> simulateUnpublish(@PathVariable String videoId) {
         if (youTubeAdapter instanceof MockYouTubeAdapter mock) {
-            boolean success = mock.simulateUnpublish(videoId);
-            return ResponseEntity.ok(Map.of("videoId", videoId, "unpublished", success));
+            String targetYtId = videoId;
+            try {
+                int dbVid = Integer.parseInt(videoId);
+                java.util.Optional<ai.humanitarians.pipeline.model.entity.VideoRecord> vr = videoRepository.findById(dbVid);
+                if (vr.isPresent() && vr.get().getYoutubeVideoId() != null) {
+                    targetYtId = vr.get().getYoutubeVideoId();
+                }
+            } catch (NumberFormatException ignored) {}
+
+            boolean success = mock.simulateUnpublish(targetYtId);
+            return ResponseEntity.ok(Map.of("videoId", videoId, "youtubeVideoId", targetYtId, "unpublished", success));
         }
         return ResponseEntity.badRequest().body(Map.of("error", "Mock adapter not active"));
+    }
+
+    @RequestMapping(value = "/simulation/reset/{videoId}", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<Map<String, Object>> resetVideoForTesting(@PathVariable String videoId) {
+        int dbVid;
+        try {
+            dbVid = Integer.parseInt(videoId);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Expected numeric videoId"));
+        }
+        java.util.Optional<ai.humanitarians.pipeline.model.entity.VideoRecord> opt = videoRepository.findById(dbVid);
+        if (opt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        ai.humanitarians.pipeline.model.entity.VideoRecord vr = opt.get();
+        vr.setCurrentStatus(ai.humanitarians.pipeline.model.enums.VideoStatus.QUEUED);
+        vr.setPublishedOn(null);
+        videoRepository.save(vr);
+        notificationRepository.deleteByVideoId(dbVid);
+        if (youTubeAdapter instanceof MockYouTubeAdapter mock && vr.getYoutubeVideoId() != null) {
+            mock.simulateUnpublish(vr.getYoutubeVideoId());
+        }
+        return ResponseEntity.ok(Map.of(
+                "videoId", dbVid,
+                "status", "queued",
+                "message", "Video and notifications reset to QUEUED state for repeatable testing"
+        ));
     }
 }

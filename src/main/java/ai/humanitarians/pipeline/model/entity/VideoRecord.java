@@ -55,7 +55,7 @@ public class VideoRecord {
     @OneToMany(mappedBy = "video", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ReviewEvent> events = new ArrayList<>();
 
-    @OneToMany(mappedBy = "video", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "video")
     private List<NotificationLog> notifications = new ArrayList<>();
 
     public VideoRecord() {}

@@ -63,5 +63,5 @@ pipeline:
   max-retry-attempts: ${MAX_RETRY_ATTEMPTS:3}
   auto-seed-on-startup: ${AUTO_SEED_ON_STARTUP:true}
   cron:
-    schedule: ${PIPELINE_CRON:0 */15 * * * *} # Every 15 minutes by default
-    enabled: ${PIPELINE_CRON_ENABLED:false}
+    schedule: ${PIPELINE_CRON:*/30 * * * * *} # Every 30 seconds by default
+    enabled: ${PIPELINE_CRON_ENABLED:true}
