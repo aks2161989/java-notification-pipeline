@@ -306,97 +306,128 @@ public class DatabaseSeederService {
 
             // 4. Videos Sheet
             Sheet videosSheet = findSheetIgnoreCase(workbook, "videos");
-            if (videosSheet != null) {
-                Map<String, Integer> vCols = buildHeaderMap(videosSheet);
-                for (Row row : videosSheet) {
-                    if (row.getRowNum() == 0) continue;
-                    int idCol = vCols.getOrDefault("video_id", 0);
-                    Integer vid = getCellInt(row.getCell(idCol), null);
-                    if (vid == null) continue;
-
-                    // Resolve fellow_id: check fellow_id column, fallback to fellow label/email/col 1
-                    Integer fid = null;
-                    if (vCols.containsKey("fellow_id")) {
-                        fid = getCellInt(row.getCell(vCols.get("fellow_id")), null);
-                    }
-                    if (fid == null && vCols.containsKey("fellow")) {
-                        String fLabel = getCellString(row.getCell(vCols.get("fellow")), null);
-                        if (fLabel != null && !fLabel.isBlank()) {
-                            String cleanLabel = DataNormalizer.cleanText(fLabel);
-                            fid = fellowRepository.findByEmail(cleanLabel)
-                                    .or(() -> fellowRepository.findAll().stream()
-                                            .filter(fel -> (fel.getDisplayLabel() != null && fel.getDisplayLabel().equalsIgnoreCase(cleanLabel))
-                                                    || (fel.getFullName() != null && fel.getFullName().equalsIgnoreCase(cleanLabel))
-                                                    || (fel.getFullName() != null && fel.getFullName().toLowerCase().startsWith(cleanLabel.toLowerCase())))
-                                            .findFirst())
-                                    .map(Fellow::getFellowId).orElse(null);
+            int videoCount = (videosSheet != null) ? seedVideosFromSheet(videosSheet) : 0;
+            if (videoCount == 0) {
+                log.info("Workbook 'videos' sheet had 0 data rows (empty cloud template). Checking local tracker for seed videos...");
+                Path localPath = Path.of(properties.getTrackerXlsxPath());
+                if (Files.exists(localPath)) {
+                    try (InputStream localIs = Files.newInputStream(localPath);
+                         Workbook localWb = new XSSFWorkbook(localIs)) {
+                        Sheet localVideos = findSheetIgnoreCase(localWb, "videos");
+                        if (localVideos != null) {
+                            videoCount = seedVideosFromSheet(localVideos);
+                            log.info("Ingested {} seed videos from local tracker {}", videoCount, localPath);
                         }
+                    } catch (Exception ex) {
+                        log.warn("Could not read local tracker videos: {}", ex.getMessage());
                     }
-                    if (fid == null && row.getCell(1) != null && row.getCell(1).getCellType() == CellType.NUMERIC) {
-                        fid = (int) row.getCell(1).getNumericCellValue();
-                    }
-
-                    int titleCol = vCols.getOrDefault("title", 2);
-                    String title = DataNormalizer.cleanText(getCellString(row.getCell(titleCol), "Video " + vid));
-
-                    int ytCol = vCols.containsKey("youtube_link") ? vCols.get("youtube_link") : vCols.getOrDefault("youtube_video_id", 3);
-                    String ytLink = getCellString(row.getCell(ytCol), null);
-                    String ytId = DataNormalizer.extractYoutubeId(ytLink);
-                    if (ytId == null && vCols.containsKey("youtube_video_id")) {
-                        ytId = DataNormalizer.extractYoutubeId(getCellString(row.getCell(vCols.get("youtube_video_id")), null));
-                    }
-
-                    int driveCol = vCols.containsKey("drive_link") ? vCols.get("drive_link") : vCols.getOrDefault("drive_file_id", 4);
-                    String driveLink = getCellString(row.getCell(driveCol), null);
-                    String driveId = DataNormalizer.extractDriveFileId(driveLink);
-                    if (driveId == null && vCols.containsKey("drive_file_id")) {
-                        driveId = DataNormalizer.extractDriveFileId(getCellString(row.getCell(vCols.get("drive_file_id")), null));
-                    }
-
-                    int statusCol = vCols.containsKey("current_status") ? vCols.get("current_status") : vCols.getOrDefault("status", 6);
-                    String statusStr = DataNormalizer.normalizeStatus(getCellString(row.getCell(statusCol), "submitted"), "submitted");
-
-                    String statusNote = vCols.containsKey("status_note") ? DataNormalizer.cleanText(getCellString(row.getCell(vCols.get("status_note")), null)) : null;
-
-                    OffsetDateTime submittedOn = vCols.containsKey("submitted_on") ? getCellDateTime(row.getCell(vCols.get("submitted_on"))) : null;
-                    OffsetDateTime publishedOn = vCols.containsKey("published_on") ? getCellDateTime(row.getCell(vCols.get("published_on"))) : null;
-
-                    Fellow f = (fid != null) ? fellowRepository.findById(fid).orElse(null) : null;
-
-                    VideoRecord vr = videoRepository.findById(vid).orElseGet(VideoRecord::new);
-                    vr.setVideoId(vid);
-                    vr.setFellow(f);
-                    vr.setTitle(title);
-                    vr.setYoutubeLink(ytLink);
-                    vr.setYoutubeVideoId(ytId);
-                    vr.setDriveLink(driveLink);
-                    vr.setDriveFileId(driveId);
-                    VideoStatus newStatus = VideoStatus.fromValue(statusStr);
-                    vr.setCurrentStatus(newStatus);
-                    if (statusNote != null) {
-                        vr.setStatusNote(statusNote);
-                    }
-                    if (submittedOn != null) {
-                        vr.setSubmittedOn(submittedOn);
-                    } else if (vr.getSubmittedOn() == null) {
-                        vr.setSubmittedOn(OffsetDateTime.now());
-                    }
-                    if (publishedOn != null) {
-                        vr.setPublishedOn(publishedOn);
-                    }
-                    if (newStatus == VideoStatus.QUEUED) {
-                        notificationRepository.deleteByVideoId(vid);
-                    }
-                    videoRepository.save(vr);
-                    counts.put("videos", counts.get("videos") + 1);
                 }
             }
+            counts.put("videos", videoCount);
 
         } catch (Exception e) {
             log.error("Failed to seed from workbook: {}", e.getMessage(), e);
         }
 
         return counts;
+    }
+
+    @Transactional
+    public int seedVideosFromSheet(Sheet videosSheet) {
+        if (videosSheet == null) return 0;
+        int count = 0;
+        Map<String, Integer> vCols = buildHeaderMap(videosSheet);
+        for (Row row : videosSheet) {
+            if (row.getRowNum() == 0) continue;
+            int idCol = vCols.getOrDefault("video_id", 0);
+            Integer vid = getCellInt(row.getCell(idCol), null);
+            if (vid == null) continue;
+
+            // Resolve fellow_id: check fellow_id column, fallback to fellow label/email/col 1
+            Integer fid = null;
+            if (vCols.containsKey("fellow_id")) {
+                fid = getCellInt(row.getCell(vCols.get("fellow_id")), null);
+            }
+            if (fid == null && vCols.containsKey("fellow")) {
+                String fLabel = getCellString(row.getCell(vCols.get("fellow")), null);
+                if (fLabel != null && !fLabel.isBlank()) {
+                    String cleanLabel = DataNormalizer.cleanText(fLabel);
+                    String candidateName = cleanLabel.contains(" - ") ? cleanLabel.split(" - ")[0].trim() : cleanLabel;
+                    fid = fellowRepository.findByEmail(cleanLabel)
+                            .or(() -> fellowRepository.findByEmail(candidateName))
+                            .or(() -> fellowRepository.findAll().stream()
+                                    .filter(fel -> (fel.getFullName() != null && (fel.getFullName().equalsIgnoreCase(candidateName)
+                                            || cleanLabel.toLowerCase().contains(fel.getFullName().toLowerCase())))
+                                            || (fel.getDisplayLabel() != null && fel.getDisplayLabel().equalsIgnoreCase(cleanLabel)))
+                                    .findFirst())
+                            .map(Fellow::getFellowId).orElse(null);
+                }
+            }
+            if (fid == null && row.getCell(1) != null && row.getCell(1).getCellType() == CellType.NUMERIC) {
+                fid = (int) row.getCell(1).getNumericCellValue();
+            }
+
+            int titleCol = vCols.getOrDefault("title", 2);
+            String title = DataNormalizer.cleanText(getCellString(row.getCell(titleCol), "Video " + vid));
+
+            int ytCol = vCols.containsKey("youtube_link") ? vCols.get("youtube_link") : vCols.getOrDefault("youtube_video_id", 3);
+            String ytLink = getCellString(row.getCell(ytCol), null);
+            String ytId = DataNormalizer.extractYoutubeId(ytLink);
+            if (ytId == null && vCols.containsKey("youtube_video_id")) {
+                ytId = DataNormalizer.extractYoutubeId(getCellString(row.getCell(vCols.get("youtube_video_id")), null));
+            }
+
+            int driveCol = vCols.containsKey("drive_link") ? vCols.get("drive_link") : vCols.getOrDefault("drive_file_id", 4);
+            String driveLink = getCellString(row.getCell(driveCol), null);
+            String driveId = DataNormalizer.extractDriveFileId(driveLink);
+            if (driveId == null && vCols.containsKey("drive_file_id")) {
+                driveId = DataNormalizer.extractDriveFileId(getCellString(row.getCell(vCols.get("drive_file_id")), null));
+            }
+
+            int statusCol = vCols.containsKey("current_status") ? vCols.get("current_status") : vCols.getOrDefault("status", 6);
+            String statusStr = DataNormalizer.normalizeStatus(getCellString(row.getCell(statusCol), "submitted"), "submitted");
+
+            String statusNote = vCols.containsKey("status_note") ? DataNormalizer.cleanText(getCellString(row.getCell(vCols.get("status_note")), null)) : null;
+
+            OffsetDateTime submittedOn = vCols.containsKey("submitted_on") ? getCellDateTime(row.getCell(vCols.get("submitted_on"))) : null;
+            OffsetDateTime publishedOn = vCols.containsKey("published_on") ? getCellDateTime(row.getCell(vCols.get("published_on"))) : null;
+
+            Fellow f = (fid != null) ? fellowRepository.findById(fid).orElse(null) : null;
+            if (f == null) {
+                f = fellowRepository.findAll().stream()
+                        .filter(fel -> "active".equalsIgnoreCase(fel.getStatus()))
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            VideoRecord vr = videoRepository.findById(vid).orElseGet(VideoRecord::new);
+            vr.setVideoId(vid);
+            vr.setFellow(f);
+            vr.setTitle(title);
+            vr.setYoutubeLink(ytLink);
+            vr.setYoutubeVideoId(ytId);
+            vr.setDriveLink(driveLink);
+            vr.setDriveFileId(driveId);
+            VideoStatus newStatus = VideoStatus.fromValue(statusStr);
+            vr.setCurrentStatus(newStatus);
+            if (statusNote != null) {
+                vr.setStatusNote(statusNote);
+            }
+            if (submittedOn != null) {
+                vr.setSubmittedOn(submittedOn);
+            } else if (vr.getSubmittedOn() == null) {
+                vr.setSubmittedOn(OffsetDateTime.now());
+            }
+            if (publishedOn != null) {
+                vr.setPublishedOn(publishedOn);
+            }
+            if (newStatus == VideoStatus.QUEUED) {
+                notificationRepository.deleteByVideoId(vid);
+            }
+            videoRepository.save(vr);
+            count++;
+        }
+        return count;
     }
 
     @Transactional
