@@ -275,7 +275,11 @@ public class DatabaseSeederService {
                     vr.setYoutubeVideoId(ytId);
                     vr.setDriveLink(driveLink);
                     vr.setDriveFileId(driveId);
-                    vr.setCurrentStatus(VideoStatus.fromValue(statusStr));
+                    VideoStatus newStatus = VideoStatus.fromValue(statusStr);
+                    vr.setCurrentStatus(newStatus);
+                    if (newStatus == VideoStatus.QUEUED) {
+                        notificationRepository.deleteByVideoId(vid);
+                    }
                     if (vr.getSubmittedOn() == null) {
                         vr.setSubmittedOn(OffsetDateTime.now());
                     }

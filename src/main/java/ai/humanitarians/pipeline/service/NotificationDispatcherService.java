@@ -3,6 +3,7 @@ package ai.humanitarians.pipeline.service;
 import ai.humanitarians.pipeline.adapter.email.ConsoleEmailSink;
 import ai.humanitarians.pipeline.adapter.email.EmailSink;
 import ai.humanitarians.pipeline.adapter.email.FileOutboxEmailSink;
+import ai.humanitarians.pipeline.adapter.email.SmtpEmailSink;
 import ai.humanitarians.pipeline.config.PipelineProperties;
 import ai.humanitarians.pipeline.model.dto.DispatchResult;
 import ai.humanitarians.pipeline.model.dto.EmailNotification;
@@ -10,6 +11,9 @@ import ai.humanitarians.pipeline.model.enums.NotificationDeliveryStatus;
 import ai.humanitarians.pipeline.model.enums.PipelineMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
@@ -24,15 +28,33 @@ public class NotificationDispatcherService {
 
     private final PipelineProperties properties;
     private final EmailFormatter emailFormatter;
+    private final JavaMailSender mailSender;
+    private final String smtpUsername;
     private final List<EmailSink> sinks;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    public NotificationDispatcherService(PipelineProperties properties, EmailFormatter emailFormatter) {
+    @Autowired
+    public NotificationDispatcherService(
+            PipelineProperties properties,
+            EmailFormatter emailFormatter,
+            @Autowired(required = false) JavaMailSender mailSender,
+            @Value("${spring.mail.username:}") String smtpUsername
+    ) {
         this.properties = properties;
         this.emailFormatter = emailFormatter;
+        this.mailSender = mailSender;
+        this.smtpUsername = (smtpUsername != null && !smtpUsername.isBlank())
+                ? smtpUsername
+                : "notifications@humanitarians.ai";
+
         this.sinks = new ArrayList<>();
         this.sinks.add(new ConsoleEmailSink());
         this.sinks.add(new FileOutboxEmailSink(Path.of(properties.getOutboxDir())));
+        if (mailSender != null && smtpUsername != null && !smtpUsername.isBlank()) {
+            log.info("Registered live SmtpEmailSink with sender: {}", this.smtpUsername);
+            this.sinks.add(new SmtpEmailSink(mailSender, this.smtpUsername));
+        } else {
+            log.info("No SMTP username provided. Running with console and file outbox sinks only.");
+        }
     }
 
     public NotificationDispatcherService(
@@ -42,7 +64,9 @@ public class NotificationDispatcherService {
     ) {
         this.properties = properties;
         this.emailFormatter = emailFormatter;
-        this.sinks = customSinks != null ? customSinks : new ArrayList<>();
+        this.mailSender = null;
+        this.smtpUsername = "notifications@humanitarians.ai";
+        this.sinks = customSinks != null ? new ArrayList<>(customSinks) : new ArrayList<>();
     }
 
     public DispatchResult dispatch(
@@ -103,7 +127,9 @@ public class NotificationDispatcherService {
         // 5. DRY_RUN mode
         if (effMode == PipelineMode.DRY_RUN) {
             for (EmailSink sink : sinks) {
-                sink.deliver(notification);
+                if (!(sink instanceof SmtpEmailSink)) {
+                    sink.deliver(notification);
+                }
             }
             return new DispatchResult(
                     true,

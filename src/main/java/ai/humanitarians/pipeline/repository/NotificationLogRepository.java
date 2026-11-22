@@ -30,6 +30,11 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
     List<NotificationLog> findByVideo_VideoIdOrderByNotificationIdDesc(Integer videoId);
 
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query("DELETE FROM NotificationLog n WHERE n.video.videoId = :videoId")
+    void deleteByVideoId(@Param("videoId") Integer videoId);
+
     @Query("SELECT n FROM NotificationLog n JOIN FETCH n.video v LEFT JOIN FETCH v.fellow f LEFT JOIN FETCH f.project " +
            "WHERE n.deliveryStatus = :status AND n.attemptCount < :maxAttempts")
     List<NotificationLog> findRetryableFailed(
