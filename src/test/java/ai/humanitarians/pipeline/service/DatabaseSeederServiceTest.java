@@ -1,6 +1,7 @@
 package ai.humanitarians.pipeline.service;
 
 import ai.humanitarians.pipeline.model.dto.MetricsSummary;
+import ai.humanitarians.pipeline.model.entity.Fellow;
 import ai.humanitarians.pipeline.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -77,5 +78,47 @@ class DatabaseSeederServiceTest {
             assertTrue(counts.get("fellows") > 0);
             assertTrue(counts.get("videos") > 0);
         }
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @DisplayName("Sync fellows from CSV with unassigned projects and active/inactive reconciliation")
+    void testFellowCsvSyncAndReconciliation() {
+        String csv1 = """
+                Name,Email,Project
+                Dev Shah,devshahofficial001@gmail.com,IACON / Optimus / RL Environment
+                Soumya Nayak,soumyanayak.neu@gmail.com,
+                """;
+
+        Map<String, Integer> counts1 = seederService.syncFellowsFromCsv(csv1);
+        assertEquals(2, counts1.get("added"));
+        assertEquals(2, counts1.get("total_active"));
+
+        Fellow dev = fellowRepository.findByEmail("devshahofficial001@gmail.com").orElseThrow();
+        assertEquals("active", dev.getStatus());
+        assertEquals("IACON / Optimus / RL Environment", dev.getProject().getProjectName());
+
+        Fellow soumya = fellowRepository.findByEmail("soumyanayak.neu@gmail.com").orElseThrow();
+        assertEquals("active", soumya.getStatus());
+        assertEquals("General / Unassigned", soumya.getProject().getProjectName());
+
+        // Now test removal / deactivation: CSV2 removes Soumya and adds Rishabh
+        String csv2 = """
+                Name,Email,Project
+                Dev Shah,devshahofficial001@gmail.com,IACON / Optimus / RL Environment
+                Rishabh Madani,mrishabh67.ai@gmail.com,
+                """;
+
+        Map<String, Integer> counts2 = seederService.syncFellowsFromCsv(csv2);
+        assertEquals(1, counts2.get("added"));
+        assertEquals(1, counts2.get("updated"));
+        assertEquals(1, counts2.get("deactivated"));
+        assertEquals(2, counts2.get("total_active"));
+
+        Fellow soumyaUpdated = fellowRepository.findByEmail("soumyanayak.neu@gmail.com").orElseThrow();
+        assertEquals("inactive", soumyaUpdated.getStatus());
+
+        Fellow rishabh = fellowRepository.findByEmail("mrishabh67.ai@gmail.com").orElseThrow();
+        assertEquals("active", rishabh.getStatus());
     }
 }

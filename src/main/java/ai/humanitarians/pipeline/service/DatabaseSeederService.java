@@ -13,9 +13,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.StringReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -293,6 +300,173 @@ public class DatabaseSeederService {
         }
 
         return counts;
+    }
+
+    @Transactional
+    public Map<String, Integer> syncFellowsFromGoogleSheet() {
+        return syncFellowsFromGoogleSheet(properties.getFellowsSheetUrl());
+    }
+
+    @Transactional
+    public Map<String, Integer> syncFellowsFromGoogleSheet(String csvUrl) {
+        log.info("Fetching fellow roster from Google Sheet: {}", csvUrl);
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.ALWAYS)
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(csvUrl))
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.error("Failed to fetch Google Sheet CSV: HTTP {}", response.statusCode());
+                return Map.of("error", response.statusCode());
+            }
+            return syncFellowsFromCsv(response.body());
+        } catch (Exception e) {
+            log.error("Exception fetching fellow roster from Google Sheet: {}", e.getMessage(), e);
+            throw new RuntimeException("Google Sheet fetch failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Transactional
+    public Map<String, Integer> syncFellowsFromCsv(String csvContent) {
+        Map<String, Integer> counts = new HashMap<>();
+        counts.put("added", 0);
+        counts.put("updated", 0);
+        counts.put("deactivated", 0);
+        counts.put("total_active", 0);
+
+        if (csvContent == null || csvContent.isBlank()) {
+            return counts;
+        }
+
+        // Ensure default project exists for fellows without an assigned project
+        Project defaultProject = projectRepository.findAll().stream()
+                .filter(p -> "General / Unassigned".equalsIgnoreCase(p.getProjectName()))
+                .findFirst()
+                .orElseGet(() -> {
+                    int pid = 999;
+                    while (projectRepository.existsById(pid)) pid++;
+                    return projectRepository.save(new Project(pid, "General / Unassigned", "internal"));
+                });
+
+        Set<String> sheetEmails = new HashSet<>();
+
+        try (BufferedReader reader = new BufferedReader(new StringReader(csvContent))) {
+            String line;
+            boolean isHeader = true;
+            int nameCol = 0, emailCol = 1, projCol = 2;
+
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) continue;
+                String[] parts = parseCsvLine(line);
+
+                if (isHeader) {
+                    isHeader = false;
+                    for (int i = 0; i < parts.length; i++) {
+                        String h = parts[i].trim().toLowerCase();
+                        if (h.contains("name")) nameCol = i;
+                        else if (h.contains("email")) emailCol = i;
+                        else if (h.contains("project")) projCol = i;
+                    }
+                    continue;
+                }
+
+                if (parts.length <= emailCol) continue;
+
+                String name = parts.length > nameCol ? DataNormalizer.cleanText(parts[nameCol]) : "Unknown Fellow";
+                String email = DataNormalizer.normalizeEmail(parts[emailCol]);
+                String projectName = (parts.length > projCol && parts[projCol] != null && !parts[projCol].isBlank())
+                        ? DataNormalizer.cleanText(parts[projCol])
+                        : null;
+
+                if (email == null || email.isBlank() || !email.contains("@")) {
+                    continue;
+                }
+
+                sheetEmails.add(email);
+
+                // Resolve project
+                Project project = defaultProject;
+                if (projectName != null && !projectName.isBlank()) {
+                    String pName = projectName;
+                    project = projectRepository.findAll().stream()
+                            .filter(p -> p.getProjectName().equalsIgnoreCase(pName))
+                            .findFirst()
+                            .orElseGet(() -> {
+                                int pid = (int) (projectRepository.count() + 1);
+                                while (projectRepository.existsById(pid)) pid++;
+                                return projectRepository.save(new Project(pid, pName, "internal"));
+                            });
+                }
+
+                Optional<Fellow> existingOpt = fellowRepository.findByEmail(email);
+                if (existingOpt.isPresent()) {
+                    Fellow existing = existingOpt.get();
+                    existing.setFullName(name);
+                    existing.setProject(project);
+                    existing.setStatus("active");
+                    existing.setDisplayLabel(name + (projectName != null ? " (" + projectName + ")" : ""));
+                    fellowRepository.save(existing);
+                    counts.put("updated", counts.get("updated") + 1);
+                } else {
+                    int nextFid = (int) (fellowRepository.count() + 1);
+                    while (fellowRepository.existsById(nextFid)) nextFid++;
+                    String label = name + (projectName != null ? " (" + projectName + ")" : "");
+                    Fellow newFellow = new Fellow(nextFid, project, name, email, "active", label);
+                    fellowRepository.save(newFellow);
+                    counts.put("added", counts.get("added") + 1);
+                }
+            }
+
+            // Reconciliation: Deactivate any fellow not present in the Google Sheet roster
+            List<Fellow> allFellows = fellowRepository.findAll();
+            for (Fellow f : allFellows) {
+                if (f.getEmail() != null && !sheetEmails.contains(f.getEmail().toLowerCase())) {
+                    if (!"inactive".equalsIgnoreCase(f.getStatus())) {
+                        f.setStatus("inactive");
+                        fellowRepository.save(f);
+                        counts.put("deactivated", counts.get("deactivated") + 1);
+                    }
+                }
+            }
+
+            int totalActive = (int) fellowRepository.findAll().stream()
+                    .filter(f -> "active".equalsIgnoreCase(f.getStatus()))
+                    .count();
+            counts.put("total_active", totalActive);
+
+            log.info("Fellow roster synced from CSV: added={}, updated={}, deactivated={}, total_active={}",
+                    counts.get("added"), counts.get("updated"), counts.get("deactivated"), totalActive);
+
+        } catch (Exception e) {
+            log.error("Failed to parse fellow CSV: {}", e.getMessage(), e);
+            throw new RuntimeException("Fellow CSV parsing failed: " + e.getMessage(), e);
+        }
+
+        return counts;
+    }
+
+    private String[] parseCsvLine(String line) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        for (char c : line.toCharArray()) {
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                tokens.add(sb.toString().trim());
+                sb.setLength(0);
+            } else {
+                sb.append(c);
+            }
+        }
+        tokens.add(sb.toString().trim());
+        return tokens.toArray(new String[0]);
     }
 
     private Map<String, Integer> buildHeaderMap(Sheet sheet) {

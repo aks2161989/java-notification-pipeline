@@ -75,6 +75,16 @@ public class PipelineManagementController {
         return ResponseEntity.ok(seederService.seedFromExcel(Path.of("data/YouTube_Pipeline_Tracker.xlsx")));
     }
 
+    @PostMapping("/seed/fellows")
+    public ResponseEntity<Map<String, Integer>> syncFellows(
+            @RequestParam(required = false) String sheetUrl
+    ) {
+        Map<String, Integer> result = (sheetUrl != null && !sheetUrl.isBlank())
+                ? seederService.syncFellowsFromGoogleSheet(sheetUrl)
+                : seederService.syncFellowsFromGoogleSheet();
+        return ResponseEntity.ok(result);
+    }
+
     @PostMapping("/simulation/publish/{videoId}")
     public ResponseEntity<Map<String, Object>> simulatePublish(@PathVariable String videoId) {
         if (youTubeAdapter instanceof MockYouTubeAdapter mock) {
