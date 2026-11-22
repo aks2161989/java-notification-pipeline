@@ -89,17 +89,20 @@ public class PipelineManagementController {
     }
 
     @GetMapping("/fellows")
-    public ResponseEntity<java.util.List<ai.humanitarians.pipeline.model.entity.Fellow>> getFellows(
+    public ResponseEntity<java.util.List<ai.humanitarians.pipeline.model.dto.FellowSummary>> getFellows(
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "20") int limit
     ) {
         java.util.List<ai.humanitarians.pipeline.model.entity.Fellow> list = (status != null && !status.isBlank())
-                ? fellowRepository.findByStatus(status)
-                : fellowRepository.findAll();
+                ? fellowRepository.findByStatusWithProject(status)
+                : fellowRepository.findAllWithProject();
         if (limit > 0 && list.size() > limit) {
             list = list.subList(0, limit);
         }
-        return ResponseEntity.ok(list);
+        java.util.List<ai.humanitarians.pipeline.model.dto.FellowSummary> dtos = list.stream()
+                .map(ai.humanitarians.pipeline.model.dto.FellowSummary::from)
+                .toList();
+        return ResponseEntity.ok(dtos);
     }
 
     @PostMapping("/simulation/publish/{videoId}")

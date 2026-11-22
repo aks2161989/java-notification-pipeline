@@ -18,4 +18,10 @@ public interface FellowRepository extends JpaRepository<Fellow, Integer> {
     Optional<Fellow> findByEmail(String email);
 
     List<Fellow> findByStatus(String status);
+
+    @Query("SELECT f FROM Fellow f LEFT JOIN FETCH f.project ORDER BY f.fellowId ASC")
+    List<Fellow> findAllWithProject();
+
+    @Query("SELECT f FROM Fellow f LEFT JOIN FETCH f.project WHERE f.status = :status ORDER BY f.fellowId ASC")
+    List<Fellow> findByStatusWithProject(@Param("status") String status);
 }

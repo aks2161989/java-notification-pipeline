@@ -1,11 +1,14 @@
 package ai.humanitarians.pipeline.model.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "fellows")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Fellow {
 
     @Id
@@ -28,6 +31,7 @@ public class Fellow {
     @Column(name = "display_label", length = 255)
     private String displayLabel;
 
+    @JsonIgnore
     @OneToMany(mappedBy = "fellow", cascade = CascadeType.ALL)
     private List<VideoRecord> videos = new ArrayList<>();
 
