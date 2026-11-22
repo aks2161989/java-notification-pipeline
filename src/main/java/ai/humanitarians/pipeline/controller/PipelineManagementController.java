@@ -44,7 +44,7 @@ public class PipelineManagementController {
         this.properties = properties;
     }
 
-    @PostMapping("/reconcile")
+    @RequestMapping(value = "/reconcile", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<ReconciliationReport> reconcile(
             @RequestParam(required = false) String mode,
             @RequestParam(required = false) String redirectTo,
@@ -65,7 +65,7 @@ public class PipelineManagementController {
         return ResponseEntity.ok(healthService.checkHealth());
     }
 
-    @PostMapping("/retry")
+    @RequestMapping(value = "/retry", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<RetryReport> retryFailed(
             @RequestParam(defaultValue = "3") int maxAttempts,
             @RequestParam(required = false) String mode,
@@ -76,7 +76,7 @@ public class PipelineManagementController {
         return ResponseEntity.ok(report);
     }
 
-    @PostMapping("/seed")
+    @RequestMapping(value = "/seed", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Integer>> seedDatabase(
             @RequestParam(defaultValue = "false") boolean syntheticOnly,
             @RequestParam(defaultValue = "false") boolean localOnly
@@ -94,7 +94,7 @@ public class PipelineManagementController {
         }
     }
 
-    @PostMapping("/seed/workbook")
+    @RequestMapping(value = "/seed/workbook", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Integer>> syncWorkbook(
             @RequestParam(required = false) String workbookUrl
     ) {
@@ -104,7 +104,7 @@ public class PipelineManagementController {
         return ResponseEntity.ok(result);
     }
 
-    @PostMapping("/seed/fellows")
+    @RequestMapping(value = "/seed/fellows", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Integer>> syncFellows(
             @RequestParam(required = false) String sheetUrl
     ) {
@@ -152,7 +152,7 @@ public class PipelineManagementController {
         return ResponseEntity.ok(dtos);
     }
 
-    @PostMapping("/simulation/publish/{videoId}")
+    @RequestMapping(value = "/simulation/publish/{videoId}", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Object>> simulatePublish(@PathVariable String videoId) {
         if (youTubeAdapter instanceof MockYouTubeAdapter mock) {
             boolean success = mock.simulatePublish(videoId);
@@ -161,7 +161,7 @@ public class PipelineManagementController {
         return ResponseEntity.badRequest().body(Map.of("error", "Mock adapter not active"));
     }
 
-    @PostMapping("/simulation/unpublish/{videoId}")
+    @RequestMapping(value = "/simulation/unpublish/{videoId}", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Map<String, Object>> simulateUnpublish(@PathVariable String videoId) {
         if (youTubeAdapter instanceof MockYouTubeAdapter mock) {
             boolean success = mock.simulateUnpublish(videoId);
