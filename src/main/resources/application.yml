@@ -56,6 +56,7 @@ pipeline:
   youtube-api-key: ${YOUTUBE_API_KEY:}
   outbox-dir: ${OUTBOX_DIR:outbox}
   tracker-xlsx-path: ${TRACKER_XLSX_PATH:data/YouTube_Pipeline_Tracker.xlsx}
+  tracker-workbook-url: ${TRACKER_WORKBOOK_URL:https://docs.google.com/spreadsheets/d/1ovAQ1N19bqlFgjhSuC8Aw4wnvSKzbTsFxt5qtOYzaY4/export?format=xlsx}
   fellows-sheet-url: ${FELLOWS_SHEET_URL:https://docs.google.com/spreadsheets/d/1ovAQ1N19bqlFgjhSuC8Aw4wnvSKzbTsFxt5qtOYzaY4/export?format=csv&gid=1733718624}
   lock-file-path: ${LOCK_FILE_PATH:.pipeline.lock}
   lock-timeout-seconds: ${LOCK_TIMEOUT_SECONDS:600}

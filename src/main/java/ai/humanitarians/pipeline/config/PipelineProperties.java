@@ -20,6 +20,7 @@ public class PipelineProperties {
     private String youtubeApiKey = "";
     private String outboxDir = "outbox";
     private String trackerXlsxPath = "data/YouTube_Pipeline_Tracker.xlsx";
+    private String trackerWorkbookUrl = "https://docs.google.com/spreadsheets/d/1ovAQ1N19bqlFgjhSuC8Aw4wnvSKzbTsFxt5qtOYzaY4/export?format=xlsx";
     private String fellowsSheetUrl = "https://docs.google.com/spreadsheets/d/1ovAQ1N19bqlFgjhSuC8Aw4wnvSKzbTsFxt5qtOYzaY4/export?format=csv&gid=1733718624";
     private String lockFilePath = ".pipeline.lock";
     private int lockTimeoutSeconds = 600;
@@ -54,6 +55,9 @@ public class PipelineProperties {
 
     public String getTrackerXlsxPath() { return trackerXlsxPath; }
     public void setTrackerXlsxPath(String trackerXlsxPath) { this.trackerXlsxPath = trackerXlsxPath; }
+
+    public String getTrackerWorkbookUrl() { return trackerWorkbookUrl; }
+    public void setTrackerWorkbookUrl(String trackerWorkbookUrl) { this.trackerWorkbookUrl = trackerWorkbookUrl; }
 
     public String getFellowsSheetUrl() { return fellowsSheetUrl; }
     public void setFellowsSheetUrl(String fellowsSheetUrl) { this.fellowsSheetUrl = fellowsSheetUrl; }

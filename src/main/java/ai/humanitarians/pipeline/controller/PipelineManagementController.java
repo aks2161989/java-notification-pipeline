@@ -21,6 +21,8 @@ public class PipelineManagementController {
     private final DatabaseSeederService seederService;
     private final YouTubeAdapter youTubeAdapter;
     private final ai.humanitarians.pipeline.repository.FellowRepository fellowRepository;
+    private final ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository;
+    private final ai.humanitarians.pipeline.config.PipelineProperties properties;
 
     public PipelineManagementController(
             ReconciliationService reconciliationService,
@@ -28,7 +30,9 @@ public class PipelineManagementController {
             NotificationRetryService retryService,
             DatabaseSeederService seederService,
             YouTubeAdapter youTubeAdapter,
-            ai.humanitarians.pipeline.repository.FellowRepository fellowRepository
+            ai.humanitarians.pipeline.repository.FellowRepository fellowRepository,
+            ai.humanitarians.pipeline.repository.VideoRecordRepository videoRepository,
+            ai.humanitarians.pipeline.config.PipelineProperties properties
     ) {
         this.reconciliationService = reconciliationService;
         this.healthService = healthService;
@@ -36,6 +40,8 @@ public class PipelineManagementController {
         this.seederService = seederService;
         this.youTubeAdapter = youTubeAdapter;
         this.fellowRepository = fellowRepository;
+        this.videoRepository = videoRepository;
+        this.properties = properties;
     }
 
     @PostMapping("/reconcile")
@@ -71,11 +77,31 @@ public class PipelineManagementController {
     }
 
     @PostMapping("/seed")
-    public ResponseEntity<Map<String, Integer>> seedDatabase(@RequestParam(defaultValue = "false") boolean syntheticOnly) {
+    public ResponseEntity<Map<String, Integer>> seedDatabase(
+            @RequestParam(defaultValue = "false") boolean syntheticOnly,
+            @RequestParam(defaultValue = "false") boolean localOnly
+    ) {
         if (syntheticOnly) {
             return ResponseEntity.ok(seederService.seedSyntheticScenarios());
         }
-        return ResponseEntity.ok(seederService.seedFromExcel(Path.of("data/YouTube_Pipeline_Tracker.xlsx")));
+        if (localOnly) {
+            return ResponseEntity.ok(seederService.seedFromExcel(Path.of(properties.getTrackerXlsxPath())));
+        }
+        try {
+            return ResponseEntity.ok(seederService.syncFromGoogleSheetWorkbook());
+        } catch (Exception e) {
+            return ResponseEntity.ok(seederService.seedFromExcel(Path.of(properties.getTrackerXlsxPath())));
+        }
+    }
+
+    @PostMapping("/seed/workbook")
+    public ResponseEntity<Map<String, Integer>> syncWorkbook(
+            @RequestParam(required = false) String workbookUrl
+    ) {
+        Map<String, Integer> result = (workbookUrl != null && !workbookUrl.isBlank())
+                ? seederService.syncFromGoogleSheetWorkbook(workbookUrl)
+                : seederService.syncFromGoogleSheetWorkbook();
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/seed/fellows")
@@ -101,6 +127,27 @@ public class PipelineManagementController {
         }
         java.util.List<ai.humanitarians.pipeline.model.dto.FellowSummary> dtos = list.stream()
                 .map(ai.humanitarians.pipeline.model.dto.FellowSummary::from)
+                .toList();
+        return ResponseEntity.ok(dtos);
+    }
+
+    @GetMapping("/videos")
+    public ResponseEntity<java.util.List<ai.humanitarians.pipeline.model.dto.VideoSummary>> getVideos(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        java.util.List<ai.humanitarians.pipeline.model.entity.VideoRecord> list;
+        if (status != null && !status.isBlank()) {
+            ai.humanitarians.pipeline.model.enums.VideoStatus vs = ai.humanitarians.pipeline.model.enums.VideoStatus.fromValue(status);
+            list = videoRepository.findByCurrentStatus(vs);
+        } else {
+            list = videoRepository.findAllWithFellow();
+        }
+        if (limit > 0 && list.size() > limit) {
+            list = list.subList(0, limit);
+        }
+        java.util.List<ai.humanitarians.pipeline.model.dto.VideoSummary> dtos = list.stream()
+                .map(ai.humanitarians.pipeline.model.dto.VideoSummary::from)
                 .toList();
         return ResponseEntity.ok(dtos);
     }

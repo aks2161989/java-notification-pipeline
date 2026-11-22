@@ -1,7 +1,7 @@
 package ai.humanitarians.pipeline.service;
 
 import ai.humanitarians.pipeline.model.dto.MetricsSummary;
-import ai.humanitarians.pipeline.model.entity.Fellow;
+import ai.humanitarians.pipeline.model.entity.*;
 import ai.humanitarians.pipeline.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -120,5 +120,29 @@ class DatabaseSeederServiceTest {
 
         Fellow rishabh = fellowRepository.findByEmail("mrishabh67.ai@gmail.com").orElseThrow();
         assertEquals("active", rishabh.getStatus());
+    }
+
+    @Test
+    @org.springframework.transaction.annotation.Transactional
+    @DisplayName("VideoSummary DTO maps entity fields cleanly")
+    void testVideoSummaryDtoMapping() {
+        Project proj = projectRepository.save(new Project(101, "Test Project", "internal"));
+        Fellow fellow = fellowRepository.save(new Fellow(201, proj, "Test Fellow", "fellow@test.org", "active", "Test Fellow"));
+        ai.humanitarians.pipeline.model.entity.VideoRecord video = new ai.humanitarians.pipeline.model.entity.VideoRecord(
+                301, fellow, "Intro to AI", "abc123xyz89", ai.humanitarians.pipeline.model.enums.VideoStatus.QUEUED
+        );
+        video.setYoutubeLink("https://youtu.be/abc123xyz89");
+        video.setDriveLink("https://drive.google.com/file/d/test-drive-id/view");
+        video.setSubmittedOn(java.time.OffsetDateTime.now());
+        video = videoRepository.save(video);
+
+        ai.humanitarians.pipeline.model.dto.VideoSummary summary = ai.humanitarians.pipeline.model.dto.VideoSummary.from(video);
+        assertEquals(301, summary.videoId());
+        assertEquals("Test Fellow", summary.fellowName());
+        assertEquals("fellow@test.org", summary.fellowEmail());
+        assertEquals("Test Project", summary.projectName());
+        assertEquals("Intro to AI", summary.title());
+        assertEquals("abc123xyz89", summary.youtubeVideoId());
+        assertEquals("queued", summary.currentStatus());
     }
 }

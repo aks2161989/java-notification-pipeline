@@ -26,10 +26,15 @@ public class PipelineApplication {
             log.info("Humanitarians AI Notification Pipeline initialized successfully.");
             if (properties.isAutoSeedOnStartup()) {
                 try {
-                    log.info("Auto-syncing fellow roster from Google Sheet on startup...");
-                    seederService.syncFellowsFromGoogleSheet();
+                    log.info("Auto-syncing tracker workbook (videos & fellows) from Google Sheet on startup...");
+                    seederService.syncFromGoogleSheetWorkbook();
                 } catch (Exception e) {
-                    log.warn("Auto-sync fellow roster on startup encountered an issue: {}", e.getMessage());
+                    log.warn("Auto-sync tracker workbook on startup encountered an issue: {}. Attempting fellow roster fallback...", e.getMessage());
+                    try {
+                        seederService.syncFellowsFromGoogleSheet();
+                    } catch (Exception ex) {
+                        log.warn("Auto-sync fellow roster fallback also encountered an issue: {}", ex.getMessage());
+                    }
                 }
             }
         };
