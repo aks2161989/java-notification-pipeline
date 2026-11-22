@@ -1,16 +1,17 @@
 <div align="center">
 
 # Automated Publication-Notification Pipeline
-### Humanitarians AI &bull; Content Operations & Workflow Automation
+### Humanitarians AI &bull; Content Operations & Workflow Automation (Java / Spring Boot Edition)
 
-[![CI Pipeline](https://github.com/aks2161989/notification-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/aks2161989/notification-pipeline/actions)
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Database](https://img.shields.io/badge/database-PostgreSQL%20%7C%20SQLite-green.svg)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-24%20passed-brightgreen.svg)](https://pytest.org/)
+[![Java Version](https://img.shields.io/badge/Java-17%20LTS-orange.svg)](https://www.oracle.com/java/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Database](https://img.shields.io/badge/database-PostgreSQL%20%7C%20H2-blue.svg)](https://www.postgresql.org/)
+[![Build & Tests](https://img.shields.io/badge/tests-20%20passed-brightgreen.svg)](https://junit.org/junit5/)
+[![Migrations](https://img.shields.io/badge/migrations-Flyway-red.svg)](https://flywaydb.org/)
 [![Architecture](https://img.shields.io/badge/architecture-idempotent%20state%20machine-purple.svg)](#architecture--system-design)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An idempotent, production-grade data pipeline that automates creator publication notifications by reconciling Google Drive submissions, relational video registers, and YouTube Data API publication events with strict concurrency controls and zero duplicate delivery guarantees.
+An idempotent, production-grade Spring Boot backend that automates creator publication notifications by reconciling Google Drive submissions, relational video registers, and YouTube Data API publication events with strict concurrency controls and zero duplicate delivery guarantees.
 
 </div>
 
@@ -34,28 +35,28 @@ The pipeline replaces brittle string matching with an **explicit relational iden
 ```mermaid
 flowchart TD
     subgraph Ingestion["1. Ingestion & Identity Modeling"]
-        Drive["Google Drive Submissions"] -->|Extract Stable File ID| IngestEngine["Data Ingestion Engine"]
+        Drive["Google Drive Submissions"] -->|Extract Stable File ID| IngestEngine["Data Ingestion & Seeder Service"]
         Roster["Fellow & PM Directory"] -->|Map Fellow ID| IngestEngine
-        IngestEngine -->|Surrogate Keys| DB[("Operational Store: PostgreSQL / SQLite")]
+        IngestEngine -->|Surrogate Keys| DB[("Operational Store: PostgreSQL / H2")]
     end
 
     subgraph Polling["2. Concurrency Lock & Polling Engine"]
-        Cron["Scheduled Cron Runner"] --> Lock{"Acquire ExecutionLock?"}
+        Cron["Spring @Scheduled Runner"] --> Lock{"Acquire ExecutionLock?"}
         Lock -->|"Held / Active"| Collide["Abort Overlap Safely"]
-        Lock -->|Acquired| Poller["YouTube Status Detector"]
+        Lock -->|Acquired| Poller["YouTube Status Poller"]
         Poller -->|Fetch Privacy Status| YTAPI["YouTube Data API v3"]
-        YTAPI -->|"Status = Public"| Reconciler["Reconciliation Matcher"]
+        YTAPI -->|"Status = Public"| Reconciler["Reconciliation Service"]
     end
 
     subgraph Idempotency["3. Two-Phase Idempotent State Machine"]
         Reconciler --> CheckSent{"Notification In-Flight or Sent?"}
         CheckSent -->|"Yes (sending or sent)"| SkipDuplicate["Skip Dispatch / Duplicate Guard"]
         CheckSent -->|"No Record"| Step1["Phase 1: Pre-commit State = 'SENDING'"]
-        Step1 --> Dispatcher["Notification Dispatcher"]
+        Step1 --> Dispatcher["Notification Dispatcher Service"]
         Dispatcher --> ModeEval{"Pipeline Mode"}
-        ModeEval -->|DRY_RUN| LogOnly["Log Intended Send + Save Outbox"]
+        ModeEval -->|DRY_RUN| LogOnly["Log Intended Send + Save Outbox Preview"]
         ModeEval -->|REDIRECTED| TestInbox["Redirect to Test Inbox with X-Headers"]
-        ModeEval -->|"COHORT / PROD"| LiveSend["Send to Fellow via Gmail/SMTP"]
+        ModeEval -->|"COHORT / PROD"| LiveSend["Send to Fellow via JavaMail / SMTP"]
         Dispatcher --> Result{"Delivery Result?"}
         Result -->|Success| Step2A["Phase 2A: Commit State = 'SENT' + Timestamp"]
         Result -->|Failure| Step2B["Phase 2B: Commit State = 'FAILED' + Retry Queue"]
@@ -64,9 +65,9 @@ flowchart TD
 
 ---
 
-## 💾 Relational Data Model
+## 💾 Relational Data Model (Spring Data JPA / Flyway)
 
-Implemented in SQLAlchemy ORM with foreign keys, status check constraints, and composite indexes:
+Managed via Flyway versioned migrations (`V1__initial_schema.sql`) and Jakarta Persistence (`@Entity`) with foreign keys, composite indexes, and database check constraints:
 
 ```mermaid
 erDiagram
@@ -82,12 +83,21 @@ erDiagram
         string project_type
     }
 
+    PMS {
+        int pm_id PK
+        int project_id FK
+        string full_name
+        string email
+        string role
+        string status "CHECK ('active', 'inactive')"
+    }
+
     FELLOWS {
         int fellow_id PK
         int project_id FK
         string full_name
         string email
-        string status
+        string status "CHECK ('active', 'inactive')"
         string display_label
     }
 
@@ -95,30 +105,33 @@ erDiagram
         int video_id PK
         int fellow_id FK
         string title
+        string youtube_link
+        string drive_link
         string drive_file_id
-        string youtube_video_id
-        string current_status
-        datetime submitted_on
-        datetime published_on
+        string youtube_video_id "INDEX"
+        string current_status "INDEX, CHECK ('submitted','in_review','needs_modification','queued','published')"
+        text status_note
+        timestamp submitted_on
+        timestamp published_on
     }
 
     REVIEW_EVENTS {
         int event_id PK
         int video_id FK
-        string event_type
+        string event_type "CHECK ('submitted','review_started','modification_requested','resubmitted','approved','queued','published')"
         string reviewer
-        datetime occurred_on
-        string notes
+        timestamp occurred_on
+        text notes
     }
 
     NOTIFICATIONS {
         int notification_id PK
         int video_id FK
         string recipient_email
-        string delivery_status
-        datetime sent_on
+        timestamp sent_on
+        string delivery_status "INDEX, CHECK ('pending','sending','sent','failed','skipped')"
+        text reason
         int attempt_count
-        string reason
     }
 ```
 
@@ -126,10 +139,10 @@ erDiagram
 
 ## 🛡️ Reliability & Enterprise Guarantees
 
-### 1. Cross-Process Mutual Exclusion (`ExecutionLock`)
+### 1. Cross-Process Mutual Exclusion (`ExecutionLockService`)
 To prevent concurrent scheduled executions from colliding:
-* Acquires a file-backed or database advisory lock capturing `pid`, `hostname`, and `timestamp`.
-* Overlapping triggers raise `LockAcquisitionError` and abort immediately.
+* Acquires a file-backed mutex capturing `pid`, `hostname`, and `timestamp`.
+* Overlapping triggers raise `LockAcquisitionException` and abort immediately.
 * **Automatic Stale-Lock Reclamation**: Expired locks exceeding the TTL (default: 600s) are automatically reclaimed to prevent deadlocks caused by killed containers.
 
 ### 2. Two-Phase Commit Delivery State Machine
@@ -145,117 +158,126 @@ To prevent concurrent scheduled executions from colliding:
 | **`COHORT`** | Filters recipients against a strict canary whitelist (`COHORT_FELLOW_IDS`). | Enables limited production rollout for early feedback. |
 | **`PROD`** | Live end-to-end delivery to verified active fellow emails. | Full organization rollout. |
 
-### 4. Operational Health Diagnostics (`doctor` & `retry`)
-* **Pipeline Doctor**: Detects stranded `SENDING` jobs, orphaned videos without fellow records, and fellows with invalid emails.
+### 4. Operational Health Diagnostics (`PipelineHealthService` & `NotificationRetryService`)
+* **Pipeline Doctor**: Detects stranded `SENDING` jobs (>10m), orphaned videos without fellow records, and fellows with invalid emails.
 * **Automated Retry Service**: Queries transient failures and re-attempts delivery with exponential backoff up to 3 attempts.
 
-### 5. Ingestion Hygiene & Database-Level Constraints
-* **Canonical URL & ID Parsing**: Rather than expecting users to paste raw IDs, regex extractors automatically parse YouTube watch URLs, shortlinks, embed links, and Drive URLs down to their canonical tokens during ingestion.
-* **Database Check Constraints**: Enforces SQL `CheckConstraint` on controlled vocabularies (`current_status`, `delivery_status`, `status`) at the database engine level, rejecting invalid states.
-
 ---
 
-## 🚀 Quickstart & Interactive CLI
+## 🚀 Quickstart & Setup
 
-### 1. Setup Environment
+### Prerequisites
+- **Java 17 LTS** (Amazon Corretto or OpenJDK 17+)
+- **Apache Maven 3.9+**
+
+### 1. Clone & Build
 ```bash
-# Clone repository
-git clone https://github.com/aks2161989/notification-pipeline.git
-cd notification-pipeline
+git clone https://github.com/aks2161989/java-notification-pipeline.git
+cd java-notification-pipeline
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .\.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
+# Build and package executable JAR
+mvn clean package
 ```
 
-### 2. Configure Environment (`.env`)
-By default, the pipeline uses SQLite for zero-dependency local testing. It can be switched to PostgreSQL by editing `.env`:
-```ini
-DATABASE_URL=sqlite:///pipeline.db
-# DATABASE_URL=postgresql://postgres:password@localhost:5432/notification_pipeline
+### 2. Run the Application
+```bash
+# Run using Spring Boot Maven plugin
+mvn spring-boot:run
 
-PIPELINE_MODE=DRY_RUN
-REDIRECT_TEST_EMAIL=your.email@example.com
-USE_MOCK_APIS=true
+# Or run the packaged JAR directly
+java -jar target/notification-pipeline-1.0.0.jar
 ```
 
-### 3. Initialize & Seed Database
-```bash
-# Create database schema
-python -m src.cli init-db
-
-# Seed from teammate tracker spreadsheet and multi-fellow synthetic scenarios
-python -m src.cli seed
-
-# Display live operational dashboard
-python -m src.cli status
+### 3. Configuration (`application.yml` or Environment Variables)
+```yaml
+pipeline:
+  mode: ${PIPELINE_MODE:DRY_RUN} # DRY_RUN, REDIRECTED, COHORT, PROD
+  redirect-test-email: ${REDIRECT_TEST_EMAIL:akshaychavan20031@gmail.com}
+  cohort-fellow-ids: ${COHORT_FELLOW_IDS:1}
+  use-mock-apis: ${USE_MOCK_APIS:true}
+  youtube-api-key: ${YOUTUBE_API_KEY:}
+  outbox-dir: ${OUTBOX_DIR:outbox}
+  lock-timeout-seconds: ${LOCK_TIMEOUT_SECONDS:600}
 ```
 
 ---
 
-## 🕹️ Simulating the End-to-End Publication Lifecycle
+## 🕹️ Operational REST API
 
-You can simulate the entire production lifecycle from video review to publication:
+The application exposes endpoints for operations and lifecycle testing:
 
+### 1. Trigger Reconciliation Run
 ```bash
-# Step 1: Mark Video 1 as reviewed & queued in YouTube playlist by PM
-python -m src.cli queue-video --video-id 1
+# Run reconciliation in DRY_RUN mode
+curl -X POST "http://localhost:8080/api/pipeline/reconcile?mode=DRY_RUN"
 
-# Step 2: Simulate reviewer (Prof. Brown) publishing the video on YouTube
-python -m src.cli simulate-publish --video-id 1
+# Run reconciliation in REDIRECTED mode
+curl -X POST "http://localhost:8080/api/pipeline/reconcile?mode=REDIRECTED&redirectTo=test@example.com"
+```
 
-# Step 3: Run the reconciliation pipeline in REDIRECTED mode
-python -m src.cli run --mode REDIRECTED --redirect-to "your.email@example.com"
+### 2. Pipeline Health & Metrics
+```bash
+# Operational metrics dashboard
+curl http://localhost:8080/api/pipeline/status
 
-# Step 4: Run the pipeline again to verify idempotency (0 duplicates sent)
-python -m src.cli run --mode REDIRECTED --redirect-to "your.email@example.com"
+# Diagnostic health check (detects stranded jobs & retry exhaustion)
+curl http://localhost:8080/api/pipeline/health
+```
 
-# Step 5: Inspect generated audit report
-python -m src.cli report
+### 3. Retry Failed Notifications
+```bash
+curl -X POST "http://localhost:8080/api/pipeline/retry?maxAttempts=3"
+```
 
-# Step 6: Run operational health monitor
-python -m src.cli doctor
+### 4. Seed Database
+```bash
+# Seed from synthetic test matrix
+curl -X POST "http://localhost:8080/api/pipeline/seed?syntheticOnly=true"
+
+# Seed from master tracker spreadsheet (data/YouTube_Pipeline_Tracker.xlsx)
+curl -X POST "http://localhost:8080/api/pipeline/seed?syntheticOnly=false"
+```
+
+### 5. Simulate Reviewer Publication
+```bash
+# Simulate reviewer publishing Video 1 on YouTube
+curl -X POST "http://localhost:8080/api/pipeline/simulation/publish/RzW17zhV4Nw"
+
+# Simulate unpublishing
+curl -X POST "http://localhost:8080/api/pipeline/simulation/unpublish/RzW17zhV4Nw"
 ```
 
 ---
 
-## 🧪 Test Suite
+## 🧪 Automated Test Suite
 
-The project includes unit and integration tests covering relational constraints, locking, and failure recovery:
+Run the full JUnit 5 and Mockito test suite:
 
 ```bash
-pytest tests/ -v
+mvn test
 ```
 
 ```
-tests/test_adapters.py::test_mock_youtube_adapter_lifecycle PASSED       [  4%]
-tests/test_adapters.py::test_mock_drive_adapter_metadata PASSED          [  8%]
-tests/test_adapters.py::test_email_formatter_templates PASSED            [ 12%]
-tests/test_adapters.py::test_dispatcher_dry_run_mode PASSED              [ 16%]
-tests/test_adapters.py::test_dispatcher_redirected_mode PASSED           [ 20%]
-tests/test_adapters.py::test_dispatcher_inactive_fellow_skipped PASSED   [ 25%]
-tests/test_normalizer.py::test_normalize_email_hygiene PASSED            [ 29%]
-tests/test_normalizer.py::test_extract_youtube_id_formats PASSED         [ 33%]
-tests/test_normalizer.py::test_extract_drive_file_id_formats PASSED      [ 37%]
-tests/test_normalizer.py::test_normalize_status PASSED                   [ 41%]
-tests/test_normalizer.py::test_db_check_constraint_rejects_invalid_video_status PASSED [ 45%]
-tests/test_normalizer.py::test_db_check_constraint_rejects_invalid_notification_status PASSED [ 50%]
-tests/test_pipeline.py::test_execution_lock_mutual_exclusion PASSED      [ 54%]
-tests/test_pipeline.py::test_execution_lock_stale_reclaim PASSED         [ 58%]
-tests/test_pipeline.py::test_idempotency_state_machine_and_duplicate_prevention PASSED [ 62%]
-tests/test_pipeline.py::test_failure_handling_and_retry_state PASSED     [ 66%]
-tests/test_recovery.py::test_doctor_detects_stranded_sending PASSED      [ 70%]
-tests/test_recovery.py::test_doctor_detects_exhausted_retries PASSED     [ 75%]
-tests/test_recovery.py::test_retry_service_successful_retry PASSED       [ 79%]
-tests/test_storage.py::test_project_and_fellow_creation PASSED           [ 83%]
-tests/test_storage.py::test_video_record_lifecycle PASSED                [ 87%]
-tests/test_idempotency_guard_detection PASSED                            [ 91%]
-tests/test_storage.py::test_seeder_synthetic_scenarios PASSED            [ 95%]
-tests/test_storage.py::test_excel_file_ingestion PASSED                  [100%]
-============================= 24 passed in 2.05s ==============================
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running ai.humanitarians.pipeline.adapter.AdaptersTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running ai.humanitarians.pipeline.service.DataNormalizerTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running ai.humanitarians.pipeline.service.ExecutionLockServiceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running ai.humanitarians.pipeline.service.ReconciliationServiceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running ai.humanitarians.pipeline.service.RecoveryServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running ai.humanitarians.pipeline.service.DatabaseSeederServiceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] Results:
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
 ```
 
 ---
@@ -263,33 +285,35 @@ tests/test_storage.py::test_excel_file_ingestion PASSED                  [100%]
 ## 📂 Project Structure
 
 ```
-notification-pipeline/
-├── .github/workflows/ci.yml       # GitHub Actions CI workflow
+java-notification-pipeline/
+├── pom.xml                                  # Maven dependencies & build plugins
 ├── data/
-│   └── YouTube_Pipeline_Tracker.xlsx # Master reference spreadsheet schema
+│   └── YouTube_Pipeline_Tracker.xlsx        # Master reference spreadsheet
 ├── docs/
-│   └── INTERVIEW_CHEAT_SHEET.md   # Architectural talking points & interview guide
+│   └── INTERVIEW_CHEAT_SHEET.md             # System design talking points & interview guide
 ├── src/
-│   ├── config.py                  # Pydantic configuration & runtime settings
-│   ├── models/
-│   │   ├── domain.py              # Pydantic domain models & state Enums
-│   │   └── orm.py                 # SQLAlchemy ORM relational models
-│   ├── storage/
-│   │   ├── database.py            # Dual PostgreSQL & SQLite engine / session manager
-│   │   ├── repository.py          # Data access queries & idempotency guards
-│   │   └── seeder.py              # Excel parser & synthetic scenario generator
-│   ├── adapters/
-│   │   ├── youtube_adapter.py     # Mock & Live YouTube Data API v3 client
-│   │   ├── drive_adapter.py       # Mock & Live Google Drive API v3 client
-│   │   └── email_adapter.py       # Multi-sink dispatcher (Console, Outbox, SMTP)
-│   ├── pipeline/
-│   │   ├── lock.py                # Process execution lock with TTL
-│   │   ├── engine.py              # Two-phase reconciliation coordinator
-│   │   └── recovery.py            # Health monitoring & automated retry service
-│   └── cli.py                     # Command-line interface
-├── tests/                         # Complete pytest test suite
-├── requirements.txt               # Dependencies
-└── pytest.ini                     # Pytest configuration
+│   ├── main/
+│   │   ├── java/ai/humanitarians/pipeline/
+│   │   │   ├── PipelineApplication.java     # Spring Boot application entrypoint
+│   │   │   ├── config/                      # Properties and adapter configurations
+│   │   │   ├── controller/                  # Operational REST endpoints
+│   │   │   ├── model/
+│   │   │   │   ├── dto/                     # DTO records & report definitions
+│   │   │   │   ├── entity/                  # JPA entities (Project, Fellow, VideoRecord, etc.)
+│   │   │   │   └── enums/                   # Status enums & attribute converters
+│   │   │   ├── repository/                  # Spring Data JPA repositories
+│   │   │   ├── scheduler/                   # Scheduled cron runner
+│   │   │   ├── service/                     # Business logic services
+│   │   │   └── adapter/                     # Google YouTube, Google Drive, Email sinks
+│   │   └── resources/
+│   │       ├── application.yml              # Configuration settings
+│   │       └── db/migration/
+│   │           └── V1__initial_schema.sql   # Flyway PostgreSQL DDL migration
+│   └── test/
+│       ├── java/ai/humanitarians/pipeline/  # JUnit 5 & Mockito test suites
+│       └── resources/
+│           └── application-test.yml         # In-memory H2 test configuration
+└── LICENSE                                  # MIT License
 ```
 
 ---
