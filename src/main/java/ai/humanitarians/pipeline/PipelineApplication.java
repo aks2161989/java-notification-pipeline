@@ -18,9 +18,20 @@ public class PipelineApplication {
     }
 
     @Bean
-    public CommandLineRunner runner(DatabaseSeederService seederService) {
+    public CommandLineRunner runner(
+            DatabaseSeederService seederService,
+            ai.humanitarians.pipeline.config.PipelineProperties properties
+    ) {
         return args -> {
             log.info("Humanitarians AI Notification Pipeline initialized successfully.");
+            if (properties.isAutoSeedOnStartup()) {
+                try {
+                    log.info("Auto-syncing fellow roster from Google Sheet on startup...");
+                    seederService.syncFellowsFromGoogleSheet();
+                } catch (Exception e) {
+                    log.warn("Auto-sync fellow roster on startup encountered an issue: {}", e.getMessage());
+                }
+            }
         };
     }
 }

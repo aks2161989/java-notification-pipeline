@@ -16,3 +16,4 @@ pipeline:
   use-mock-apis: true
   outbox-dir: target/test-outbox
   lock-file-path: target/test-pipeline.lock
+  auto-seed-on-startup: false

@@ -24,6 +24,7 @@ public class PipelineProperties {
     private String lockFilePath = ".pipeline.lock";
     private int lockTimeoutSeconds = 600;
     private int maxRetryAttempts = 3;
+    private boolean autoSeedOnStartup = true;
 
     public PipelineMode getMode() { return mode; }
     public void setMode(PipelineMode mode) { this.mode = mode; }
@@ -65,4 +66,7 @@ public class PipelineProperties {
 
     public int getMaxRetryAttempts() { return maxRetryAttempts; }
     public void setMaxRetryAttempts(int maxRetryAttempts) { this.maxRetryAttempts = maxRetryAttempts; }
+
+    public boolean isAutoSeedOnStartup() { return autoSeedOnStartup; }
+    public void setAutoSeedOnStartup(boolean autoSeedOnStartup) { this.autoSeedOnStartup = autoSeedOnStartup; }
 }
