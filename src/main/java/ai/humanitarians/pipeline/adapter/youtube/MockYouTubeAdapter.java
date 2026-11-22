@@ -146,22 +146,58 @@ public class MockYouTubeAdapter implements YouTubeAdapter {
 
     @Override
     public Optional<YouTubeVideoMetadata> getVideoStatus(String videoId) {
+        // 1. Check if this is a real YouTube video via oEmbed
+        Optional<String> realTitle = checkYouTubeOEmbedTitle(videoId);
+        if (realTitle.isPresent()) {
+            boolean isUnlisted = isLiveVideoUnlisted(videoId);
+            String privacy = isUnlisted ? "unlisted" : "public";
+            YouTubeVideoMetadata meta = videos.get(videoId);
+            YouTubeVideoMetadata liveMeta = new YouTubeVideoMetadata(
+                    videoId,
+                    meta != null && meta.title() != null && !meta.title().isBlank() ? meta.title() : realTitle.get(),
+                    privacy,
+                    "processed",
+                    "public".equals(privacy) ? (meta != null && meta.publishedAt() != null ? meta.publishedAt() : OffsetDateTime.now()) : null,
+                    meta != null ? meta.channelId() : null,
+                    isUnlisted ? "Queue" : null
+            );
+            videos.put(videoId, liveMeta);
+            persist();
+            return Optional.of(liveMeta);
+        }
+
+        // 2. Otherwise fall back to synthetic mock map (for offline unit tests)
         YouTubeVideoMetadata meta = videos.get(videoId);
         if (meta != null) {
             return Optional.of(meta);
         }
-        // Fallback: check YouTube oEmbed for real videos tested locally without an API key
-        Optional<String> realTitle = checkYouTubeOEmbedTitle(videoId);
-        if (realTitle.isPresent()) {
-            YouTubeVideoMetadata discovered = new YouTubeVideoMetadata(
-                    videoId, realTitle.get(), "public", "processed",
-                    OffsetDateTime.now(), null, null
-            );
-            videos.put(videoId, discovered);
-            persist();
-            return Optional.of(discovered);
-        }
         return Optional.empty();
+    }
+
+    private boolean isLiveVideoUnlisted(String videoId) {
+        if (videoId == null || videoId.isBlank()) return false;
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(4))
+                    .followRedirects(HttpClient.Redirect.ALWAYS)
+                    .build();
+            String url = "https://www.youtube.com/watch?v=" + videoId;
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(4))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .GET()
+                    .build();
+            HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200 && resp.body() != null) {
+                return resp.body().contains("\"isUnlisted\":true") || resp.body().contains("\"isUnlisted\": true");
+            }
+            return false;
+        } catch (Exception e) {
+            log.debug("Live watch page check for video {} returned: {}", videoId, e.getMessage());
+            return false;
+        }
     }
 
     private Optional<String> checkYouTubeOEmbedTitle(String videoId) {

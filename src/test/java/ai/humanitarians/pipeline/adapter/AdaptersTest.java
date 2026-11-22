@@ -36,24 +36,24 @@ class AdaptersTest {
         Path stateFile = tempDir.resolve(".mock_yt.json");
         MockYouTubeAdapter yt = new MockYouTubeAdapter(stateFile);
 
-        // RzW17zhV4Nw starts unlisted in Queue
-        assertFalse(yt.isVideoPublic("RzW17zhV4Nw"));
-        Optional<YouTubeVideoMetadata> meta = yt.getVideoStatus("RzW17zhV4Nw");
+        // 4D_wCD67890 starts unlisted in Queue
+        assertFalse(yt.isVideoPublic("4D_wCD67890"));
+        Optional<YouTubeVideoMetadata> meta = yt.getVideoStatus("4D_wCD67890");
         assertTrue(meta.isPresent());
         assertEquals("unlisted", meta.get().privacyStatus());
         assertEquals("Queue", meta.get().playlistName());
 
         // Reviewer hits publish
-        assertTrue(yt.simulatePublish("RzW17zhV4Nw"));
-        assertTrue(yt.isVideoPublic("RzW17zhV4Nw"));
-        Optional<YouTubeVideoMetadata> metaAfter = yt.getVideoStatus("RzW17zhV4Nw");
+        assertTrue(yt.simulatePublish("4D_wCD67890"));
+        assertTrue(yt.isVideoPublic("4D_wCD67890"));
+        Optional<YouTubeVideoMetadata> metaAfter = yt.getVideoStatus("4D_wCD67890");
         assertTrue(metaAfter.isPresent());
         assertEquals("public", metaAfter.get().privacyStatus());
         assertNotNull(metaAfter.get().publishedAt());
 
         // Simulate unpublish
-        assertTrue(yt.simulateUnpublish("RzW17zhV4Nw"));
-        assertFalse(yt.isVideoPublic("RzW17zhV4Nw"));
+        assertTrue(yt.simulateUnpublish("4D_wCD67890"));
+        assertFalse(yt.isVideoPublic("4D_wCD67890"));
     }
 
     @Test
